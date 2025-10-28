@@ -419,10 +419,10 @@ class GradioInterface:
         with gr.Row():
             # 图像上传
             with gr.Column():
-                self.image_input = gr.Image(
-                    label="上传HDR图像",
-                    type="numpy",
-                    height=300
+                self.image_input = gr.File(
+                    label="上传HDR图像 (.hdr, .exr, .jpg, .png)",
+                    file_types=[".hdr", ".exr", ".jpg", ".jpeg", ".png", ".tiff", ".tif"],
+                    type="filepath"
                 )
                 
                 self.image_info = gr.Textbox(
@@ -958,13 +958,20 @@ class GradioInterface:
         except Exception as e:
             return 2.0, 0.5, f"参数估算失败: {str(e)}"
             
-    def handle_image_upload(self, image: np.ndarray, channel: str) -> Tuple[str, Dict]:
+    def handle_image_upload(self, image_file: str, channel: str) -> Tuple[str, Dict]:
         """处理图像上传"""
         
-        if image is None:
+        if image_file is None:
             self.ui_state.current_image = None
             self.ui_state.current_image_stats = None
             return "未上传图像", {}
+        
+        # 加载HDR图像
+        image, load_info = self.load_hdr_image(image_file)
+        if image is None:
+            self.ui_state.current_image = None
+            self.ui_state.current_image_stats = None
+            return load_info, {}
             
         try:
             # 存储图像
@@ -978,8 +985,12 @@ class GradioInterface:
             self.ui_state.current_image_stats = stats  # stats is already an ImageStats object
             
             # 生成信息文本
-            info_text = f"""图像信息:
+            from pathlib import Path
+            file_name = Path(image_file).name if image_file else "未知文件"
+            
+            info_text = f"""{load_info}
 尺寸: {image.shape[0]} x {image.shape[1]} x {image.shape[2] if len(image.shape) > 2 else 1}
+文件: {file_name}
 格式: {stats.input_format}
 处理路径: {stats.processing_path}
 亮度通道: {channel}
@@ -1001,13 +1012,84 @@ class GradioInterface:
             traceback.print_exc()
             return f"图像处理失败: {str(e)}", {}
             
+    def load_hdr_image(self, file_path: str) -> Tuple[np.ndarray, str]:
+        """加载HDR图像文件"""
+        
+        if file_path is None:
+            return None, "未选择文件"
+            
+        try:
+            import cv2
+            from pathlib import Path
+            
+            file_path = Path(file_path)
+            
+            if not file_path.exists():
+                return None, f"文件不存在: {file_path}"
+            
+            # 根据文件扩展名选择加载方式
+            ext = file_path.suffix.lower()
+            
+            if ext in ['.hdr', '.pic']:
+                # 加载HDR文件
+                image = cv2.imread(str(file_path), cv2.IMREAD_ANYDEPTH | cv2.IMREAD_COLOR)
+                if image is not None:
+                    # OpenCV加载的是BGR格式，转换为RGB
+                    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+                    info = f"HDR文件加载成功: {file_path.name}"
+                else:
+                    return None, f"无法加载HDR文件: {file_path.name}"
+                    
+            elif ext in ['.exr']:
+                # 加载EXR文件
+                try:
+                    image = cv2.imread(str(file_path), cv2.IMREAD_ANYDEPTH | cv2.IMREAD_COLOR)
+                    if image is not None:
+                        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+                        info = f"EXR文件加载成功: {file_path.name}"
+                    else:
+                        return None, f"无法加载EXR文件: {file_path.name} (可能需要OpenEXR支持)"
+                except Exception as e:
+                    return None, f"EXR加载错误: {str(e)}"
+                    
+            elif ext in ['.jpg', '.jpeg', '.png', '.tiff', '.tif']:
+                # 加载常规图像文件
+                image = cv2.imread(str(file_path), cv2.IMREAD_COLOR)
+                if image is not None:
+                    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+                    # 转换为浮点数并归一化
+                    image = image.astype(np.float32) / 255.0
+                    info = f"图像文件加载成功: {file_path.name}"
+                else:
+                    return None, f"无法加载图像文件: {file_path.name}"
+            else:
+                return None, f"不支持的文件格式: {ext}"
+            
+            # 确保图像是浮点数格式
+            if image.dtype != np.float32:
+                image = image.astype(np.float32)
+            
+            # 检查图像尺寸
+            if image.size > 10_000_000:  # 10M像素限制
+                return None, f"图像过大: {image.shape}, 请使用较小的图像"
+            
+            return image, info
+            
+        except Exception as e:
+            return None, f"文件加载失败: {str(e)}"
+    
     def process_image(self, p: float, a: float, enable_spline: bool,
                      th1: float, th2: float, th3: float, th_strength: float,
-                     image: np.ndarray, channel: str) -> Tuple[np.ndarray, Dict, float, float, str]:
+                     image_file: str, channel: str) -> Tuple[np.ndarray, Dict, float, float, str]:
         """处理图像"""
         
-        if image is None:
+        if image_file is None:
             return None, {}, 0.0, 0.0, "未上传图像"
+        
+        # 加载HDR图像
+        image, load_info = self.load_hdr_image(image_file)
+        if image is None:
+            return None, {}, 0.0, 0.0, load_info
             
         try:
             # 转换到PQ域
@@ -1300,11 +1382,16 @@ class GradioInterface:
             
     def process_image_with_progress(self, p: float, a: float, enable_spline: bool,
                                   th1: float, th2: float, th3: float, th_strength: float,
-                                  image: np.ndarray, channel: str) -> Tuple[np.ndarray, Dict, float, float, str, str]:
+                                  image_file: str, channel: str) -> Tuple[np.ndarray, Dict, float, float, str, str]:
         """带进度指示的图像处理"""
         
-        if image is None:
+        if image_file is None:
             return None, {}, 0.0, 0.0, "未上传图像", "无图像"
+        
+        # 加载HDR图像
+        image, load_info = self.load_hdr_image(image_file)
+        if image is None:
+            return None, {}, 0.0, 0.0, load_info, "加载失败"
             
         try:
             # 创建色调映射函数
