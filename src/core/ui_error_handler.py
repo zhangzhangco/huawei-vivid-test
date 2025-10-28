@@ -155,6 +155,23 @@ class UIErrorHandler:
             message = self.error_templates['gpu_acceleration_failed']
             severity = ErrorSeverity.INFO
             suggestion = "性能可能受到影响，但功能正常"
+        elif error_type == "curve_update_failed":
+            # 静默处理曲线更新失败，避免控制台输出
+            reason = kwargs.get('reason', '未知原因')
+            message = f"曲线计算异常: {reason}"
+            severity = ErrorSeverity.WARNING
+            suggestion = "请检查参数设置或刷新页面"
+            # 只记录到日志，不打印到控制台
+            self.logger.debug(f"Curve update failed: {reason}")
+            return ErrorMessage(severity, "曲线更新", message, suggestion)
+        elif error_type == "plot_creation_failed":
+            # 静默处理图表创建失败
+            reason = kwargs.get('reason', '未知原因')
+            message = f"图表生成异常: {reason}"
+            severity = ErrorSeverity.WARNING
+            suggestion = "尝试调整参数或刷新页面"
+            self.logger.debug(f"Plot creation failed: {reason}")
+            return ErrorMessage(severity, "图表生成", message, suggestion)
         else:
             message = f"系统错误: {error_type}"
             severity = ErrorSeverity.ERROR
