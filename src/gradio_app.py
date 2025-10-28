@@ -902,9 +902,9 @@ class GradioInterface:
             if self.ui_state.current_image_stats is not None:
                 # 使用真实图像统计
                 result = self.auto_estimator.estimate_parameters(self.ui_state.current_image_stats)
-                estimated_p = result.estimated_p
-                estimated_a = result.estimated_a
-                info = f"基于图像统计自动估算\n统计信息: {result.statistics}"
+                estimated_p = result.p_estimated
+                estimated_a = result.a_estimated
+                info = f"基于图像统计自动估算\n置信度: {result.confidence_score:.2f}"
             else:
                 # 使用默认估算
                 estimated_p = 1.8
@@ -950,8 +950,8 @@ class GradioInterface:
         try:
             if self.ui_state.current_image_stats is not None:
                 result = self.auto_estimator.estimate_parameters(self.ui_state.current_image_stats)
-                info = f"参数已应用\n估算信息: {result.statistics}"
-                return result.estimated_p, result.estimated_a, info
+                info = f"参数已应用\n置信度: {result.confidence_score:.2f}"
+                return result.p_estimated, result.a_estimated, info
             else:
                 return 1.8, 0.4, "已应用默认自动参数"
                 
