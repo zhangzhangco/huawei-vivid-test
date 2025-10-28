@@ -1,0 +1,43 @@
+{
+  "phoenix_params": {
+    "p": 2.0,
+    "a": 0.5,
+    "p_range": [0.1, 6.0],
+    "a_range": [0.0, 1.0]
+  },
+  "display_params": {
+    "min_display_pq": 0.0,
+    "max_display_pq": 1.0,
+    "display_samples": 512,
+    "validation_samples": 1024
+  },
+  "quality_metrics": {
+    "dt_low": 0.05,
+    "dt_high": 0.10,
+    "luminance_channel": "MaxRGB"
+  },
+  "temporal_smoothing": {
+    "window_size": 9,
+    "lambda_smooth": 0.3,
+    "window_range": [5, 15],
+    "lambda_range": [0.2, 0.5]
+  },
+  "spline_params": {
+    "th_nodes": [0.2, 0.5, 0.8],
+    "th_strength": 0.0,
+    "min_interval": 0.01
+  },
+  "auto_mode": {
+    "p0": 1.0,
+    "a0": 0.3,
+    "alpha": 0.5,
+    "beta": 0.3
+  },
+  "system": {
+    "mode": "艺术模式",
+    "histogram_bins": 256,
+    "max_image_pixels": 1638400,
+    "enable_gpu_acceleration": false,
+    "numerical_epsilon": 1e-6
+  }
+}

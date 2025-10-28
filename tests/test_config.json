@@ -1,0 +1,84 @@
+{
+  "validation_framework": {
+    "version": "1.0.0",
+    "description": "HDR色调映射专利可视化工具验证框架配置",
+    "test_categories": {
+      "golden_standard": {
+        "enabled": true,
+        "timeout_seconds": 300,
+        "tolerance_levels": {
+          "strict": 1e-10,
+          "normal": 1e-6,
+          "relaxed": 1e-4
+        }
+      },
+      "monotonicity_stress": {
+        "enabled": true,
+        "timeout_seconds": 600,
+        "parameter_ranges": {
+          "p_values": [0.1, 0.5, 1.0, 2.0, 3.0, 5.0, 6.0],
+          "a_values": [0.0, 0.1, 0.3, 0.5, 0.7, 0.9, 1.0]
+        },
+        "spline_test_configs": {
+          "node_configurations": [
+            [0.1, 0.5, 0.9],
+            [0.2, 0.4, 0.6, 0.8],
+            [0.15, 0.35, 0.65, 0.85]
+          ],
+          "strength_values": [0.1, 0.3, 0.5, 0.7, 0.9, 1.0]
+        }
+      },
+      "hysteresis_stability": {
+        "enabled": true,
+        "timeout_seconds": 180,
+        "test_sequences": {
+          "basic_sequence": [0.03, 0.07, 0.12, 0.08, 0.04],
+          "oscillation_sequence": [0.06, 0.07, 0.065, 0.075, 0.068, 0.072, 0.069],
+          "long_term_frames": 100,
+          "noise_level": 0.01
+        }
+      },
+      "export_import_consistency": {
+        "enabled": true,
+        "timeout_seconds": 240,
+        "precision_requirements": {
+          "lut_max_error": 1e-4,
+          "csv_max_error": 1e-6,
+          "session_state_tolerance": 1e-10
+        },
+        "test_samples": {
+          "lut_samples": [256, 512, 1024, 4096],
+          "curve_samples": [100, 256, 512, 1000]
+        }
+      }
+    },
+    "performance_benchmarks": {
+      "phoenix_curve_max_time_ms": 10.0,
+      "quality_metrics_max_time_ms": 50.0,
+      "memory_limit_mb": 500,
+      "memory_recovery_rate": 0.5
+    },
+    "golden_test_data": {
+      "image_sizes": {
+        "small": [64, 64],
+        "medium": [128, 128],
+        "large": [256, 256]
+      },
+      "curve_samples": 1000,
+      "test_image_types": [
+        "uniform_gray",
+        "linear_gradient", 
+        "checkerboard",
+        "gaussian_noise",
+        "rgb_gradient",
+        "hdr_synthetic"
+      ]
+    },
+    "reporting": {
+      "include_detailed_failures": true,
+      "include_performance_metrics": true,
+      "include_memory_usage": true,
+      "max_failure_details": 10
+    }
+  }
+}

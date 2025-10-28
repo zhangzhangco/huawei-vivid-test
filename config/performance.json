@@ -1,0 +1,38 @@
+{
+  "performance_thresholds": {
+    "curve_update_ms": 500,
+    "image_processing_ms": 300,
+    "memory_warning_mb": 1000,
+    "cpu_warning_percent": 80
+  },
+  "sampling_optimization": {
+    "base_display_samples": 512,
+    "base_validation_samples": 1024,
+    "min_samples": 256,
+    "max_samples": 2048,
+    "target_curve_time_ms": 100,
+    "max_curve_time_ms": 500
+  },
+  "auto_downsampling": {
+    "max_pixels": 1638400,
+    "target_response_time_ms": 300,
+    "min_scale": 0.25,
+    "max_performance_history": 10
+  },
+  "acceleration": {
+    "enable_numba": true,
+    "enable_cuda": true,
+    "enable_mkl": true,
+    "fallback_on_error": true
+  },
+  "async_processing": {
+    "max_workers": 2,
+    "task_timeout_seconds": 30,
+    "cleanup_interval_seconds": 60
+  },
+  "monitoring": {
+    "max_metrics_history": 100,
+    "performance_check_interval_seconds": 5,
+    "enable_detailed_logging": false
+  }
+}
