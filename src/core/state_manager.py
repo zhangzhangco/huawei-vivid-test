@@ -140,30 +140,58 @@ class TemporalStateData:
 class StateManager:
     """状态管理器 - 管理会话状态和时域状态的分离存储"""
     
-    def __init__(self, state_dir: str = ".kiro_state"):
+    def __init__(self, state_dir: Optional[str] = None, use_memory_backend: bool = False):
         """
         初始化状态管理器
-        
+
         Args:
-            state_dir: 状态文件存储目录
+            state_dir: 状态文件存储目录，默认从环境变量 HDR_STATE_DIR 读取，
+                      如果未设置则使用 '.kiro_state'
+            use_memory_backend: 是否使用内存后端（用于测试或只读环境）
         """
-        self.state_dir = Path(state_dir)
-        self.state_dir.mkdir(exist_ok=True)
-        
-        self.session_file = self.state_dir / "session_state.json"
-        self.temporal_file = self.state_dir / "temporal_state.json"
-        
-        # 状态对象
-        self._session_state: Optional[SessionState] = None
-        self._temporal_state: Optional[TemporalStateData] = None
-        
+        # 支持环境变量配置
+        if state_dir is None:
+            state_dir = os.getenv('HDR_STATE_DIR', '.kiro_state')
+
+        self.use_memory_backend = use_memory_backend or state_dir == '/dev/null'
+
+        if self.use_memory_backend:
+            # 内存后端（测试用或只读环境）
+            self.state_dir = None
+            self.session_file = None
+            self.temporal_file = None
+            # 状态对象
+            self._session_state = SessionState()
+            self._temporal_state = TemporalStateData()
+        else:
+            # 文件系统后端
+            self.state_dir = Path(state_dir)
+            try:
+                self.state_dir.mkdir(exist_ok=True, parents=True)
+            except (OSError, PermissionError) as e:
+                # 如果无法创建目录，回退到内存后端
+                self.logger.warning(f"无法创建状态目录 {state_dir}: {e}，使用内存后端")
+                self.use_memory_backend = True
+                self.state_dir = None
+                self.session_file = None
+                self.temporal_file = None
+                self._session_state = SessionState()
+                self._temporal_state = TemporalStateData()
+
+            if not self.use_memory_backend:
+                self.session_file = self.state_dir / "session_state.json"
+                self.temporal_file = self.state_dir / "temporal_state.json"
+                # 状态对象
+                self._session_state = None
+                self._temporal_state = None
+
         # 自动保存设置
         self.auto_save_interval = 30.0  # 30秒
         self.last_save_time = 0.0
-        
+
         # 状态变化监听器
         self.state_change_listeners: List[callable] = []
-        
+
         # 日志设置
         self.logger = logging.getLogger(__name__)
         

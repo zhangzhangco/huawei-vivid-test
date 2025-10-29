@@ -22,7 +22,7 @@ from core import (
 )
 
 
-class FinalIntegrationTests:
+class TestFinalIntegration:
     """最终集成测试类"""
     
     def __init__(self):

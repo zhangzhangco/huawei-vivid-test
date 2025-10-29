@@ -12,6 +12,34 @@ import logging
 
 from .pq_converter import PQConverter
 
+# BT.2100 Y 通道权重常量，避免重复创建
+BT2100_Y_WEIGHTS = np.array([0.2627, 0.6780, 0.0593], dtype=np.float32)
+
+
+def extract_luminance(image: np.ndarray, mode: str = "Y") -> np.ndarray:
+    """
+    提取亮度通道
+
+    Args:
+        image: 输入图像 (H, W, 3) 或 (H, W)
+        mode: 提取模式 ("Y" 使用BT.2100权重 或 "MaxRGB")
+
+    Returns:
+        亮度通道 (H, W)
+    """
+    if image.ndim == 2:
+        # 已经是单通道
+        return image
+
+    if image.ndim == 3 and image.shape[2] == 3:
+        if mode == "Y":
+            # 使用 BT.2100 Y 权重
+            return np.tensordot(image, BT2100_Y_WEIGHTS, axes=([-1], [0]))
+        else:  # MaxRGB
+            return np.max(image, axis=-1)
+    else:
+        raise ValueError(f"不支持的图像维度: {image.shape}")
+
 
 @dataclass
 class ImageStats:
@@ -144,41 +172,44 @@ class ImageProcessor:
             else:
                 raise ImageProcessingError(f"图像加载失败: {str(e)}")
                 
-    def convert_to_pq_domain(self, image: np.ndarray, input_format: str) -> np.ndarray:
+    def convert_to_pq_domain(self, image: np.ndarray, input_format: str,
+                            reference_white_nits: float = 1000.0) -> np.ndarray:
         """转换到PQ域
-        
+
         Args:
             image: 输入图像数组
             input_format: 输入格式标识
-            
+            reference_white_nits: 参考白点亮度 (nits), 默认1000, 可选2000/10000
+
         Returns:
             PQ域图像数组
         """
         # 确保输入在合理范围内
         image = np.clip(image, 0, None)  # 不限制上限，但确保非负
-        
+
         if input_format.lower().startswith('openexr') or 'linear' in input_format.lower():
-            # 线性光 → PQ：假设[0,1]对应[0,10000nit]
-            # 对于超过1的值，按比例缩放
+            # 线性光 → PQ
             max_val = np.max(image)
             if max_val > 1.0:
                 # 如果有超过1的值，假设这是绝对亮度值（nits）
-                linear_nits = np.clip(image, 0, 10000)
+                # 使用参考白点做合理限制，避免丢失高光细节
+                max_safe = max_val if max_val <= reference_white_nits * 10 else reference_white_nits * 10
+                linear_nits = np.clip(image, 0, max_safe)
             else:
-                # 归一化值，映射到0-10000 nits
-                linear_nits = image * 10000.0
-                
+                # 归一化值，映射到参考白点亮度
+                linear_nits = image * reference_white_nits
+
             return self.pq_converter.linear_to_pq(linear_nits)
-            
+
         elif 'pq' in input_format.lower():
             # 已经是PQ编码，直接使用
             return np.clip(image, 0, 1)
-            
+
         else:  # sRGB或标准格式
             # sRGB → 线性光 → PQ
             linear = self.pq_converter.srgb_to_linear(np.clip(image, 0, 1))
-            # 假设线性[0,1] → 0..10000nit
-            linear_nits = linear * 10000.0
+            # 假设线性[0,1] → 0..reference_white_nits
+            linear_nits = linear * reference_white_nits
             return self.pq_converter.linear_to_pq(linear_nits)
             
     def apply_tone_mapping(self, image: np.ndarray, 
@@ -196,12 +227,7 @@ class ImageProcessor:
         """
         if image.ndim == 3:
             # 提取亮度通道
-            if luminance_channel == "Y":
-                # BT.2100 Y权重
-                weights = np.array([0.2627, 0.6780, 0.0593], dtype=image.dtype)
-                L_in = np.tensordot(image, weights, axes=([-1], [0]))
-            else:  # MaxRGB
-                L_in = np.max(image, axis=-1)
+            L_in = extract_luminance(image, luminance_channel)
                 
             # 应用色调映射到亮度通道
             L_in_safe = np.clip(L_in, 1e-8, 1.0)  # 避免除零
@@ -303,14 +329,8 @@ class ImageProcessor:
         Returns:
             图像统计信息
         """
-        if image.ndim == 3:
-            if luminance_channel == "MaxRGB":
-                L = np.max(image, axis=-1)
-            else:  # Y通道
-                weights = np.array([0.2627, 0.6780, 0.0593])
-                L = np.dot(image, weights)
-        else:
-            L = image
+        # 提取亮度通道
+        L = extract_luminance(image, luminance_channel)
             
         return ImageStats(
             min_pq=float(np.min(L)),

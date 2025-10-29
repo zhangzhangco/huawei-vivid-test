@@ -48,31 +48,41 @@ class TemporalSmoothingProcessor:
     - 19.3: 时域状态可视化指示
     """
     
-    def __init__(self, window_size: int = 9, temporal_file: str = "temporal_state.json"):
+    def __init__(self, window_size: int = 9, temporal_file: Optional[str] = None):
         """
         初始化时域平滑处理器
-        
+
         Args:
             window_size: 时域窗口大小 (5-15帧)
-            temporal_file: 时域状态文件路径
+            temporal_file: 时域状态文件路径，默认从环境变量 HDR_STATE_DIR 读取，
+                          如果未设置则使用 'temporal_state.json'
         """
         # 参数验证
         if not (5 <= window_size <= 15):
             raise ValueError(f"窗口大小{window_size}超出范围[5, 15]")
-            
+
         self.window_size = window_size
-        self.temporal_file = temporal_file
         self.eps = 1e-8
-        
+
+        # 支持环境变量配置
+        if temporal_file is None:
+            state_dir = os.getenv('HDR_STATE_DIR', '.kiro_state')
+            if state_dir == '/dev/null':
+                self.temporal_file = None  # 内存模式
+            else:
+                self.temporal_file = os.path.join(state_dir, "temporal_state.json")
+        else:
+            self.temporal_file = temporal_file
+
         # 时域缓冲
         self.parameter_history: List[Dict[str, float]] = []
         self.distortion_history: List[float] = []
         self.frame_count = 0
-        
+
         # 默认参数范围
         self.lambda_range = (0.2, 0.5)
         self.default_lambda = 0.3
-        
+
         # 加载已有状态
         self._load_temporal_state()
         

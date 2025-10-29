@@ -51,12 +51,15 @@ class PhoenixCurveCalculator:
         # 输入夹取和安全处理
         L_array = np.asarray(L)
         L_clipped = np.clip(L_array, self.eps, 1.0)
-        a_eff = max(a, self.eps)  # 避免a=0导致的除零
-        
+
+        # 特殊处理：当 a <= eps 时，直接返回恒值1
+        if a <= self.eps:
+            return np.ones_like(L_clipped)
+
         # Phoenix曲线计算
         L_p = np.power(L_clipped, p)
-        a_p = np.power(a_eff, p)
-        
+        a_p = np.power(a, p)
+
         return L_p / (L_p + a_p)
         
     def normalize_endpoints(self, L_out: np.ndarray, L_min: float = 0.0, 

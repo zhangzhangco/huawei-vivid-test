@@ -5,9 +5,10 @@ HDR色调映射专利可视化工具 - Gradio用户界面
 
 import gradio as gr
 import numpy as np
-import matplotlib.pyplot as plt
+# 在导入 pyplot 之前设置后端，避免在无显示环境中触发警告
 import matplotlib
-matplotlib.use('Agg')  # 使用非交互式后端
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
 import io
 import base64
 from typing import Dict, List, Tuple, Optional, Any
@@ -960,35 +961,43 @@ class GradioInterface:
             
     def handle_image_upload(self, image_file: str, channel: str) -> Tuple[str, Dict]:
         """处理图像上传"""
-        
+
         if image_file is None:
             self.ui_state.current_image = None
             self.ui_state.current_image_stats = None
             return "未上传图像", {}
-        
+
+        # 检测输入格式
+        input_format = self.image_processor.detect_input_format(image_file)
+
         # 加载HDR图像
-        image, load_info = self.load_hdr_image(image_file)
+        image, processing_path = self.load_hdr_image(image_file)
         if image is None:
             self.ui_state.current_image = None
             self.ui_state.current_image_stats = None
-            return load_info, {}
-            
+            return processing_path, {}  # 此时 processing_path 包含错误信息
+
         try:
             # 存储图像
             self.ui_state.current_image = image.copy()
-            
-            # 转换到PQ域
-            pq_image = self.image_processor.convert_to_pq_domain(image, "sRGB")
+
+            # 转换到PQ域，使用检测到的格式
+            pq_image = self.image_processor.convert_to_pq_domain(image, input_format)
             
             # 计算图像统计
             stats = self.image_processor.get_image_stats(pq_image, channel)
+
+            # 设置统计信息的格式和路径
+            stats.input_format = input_format
+            stats.processing_path = processing_path
+
             self.ui_state.current_image_stats = stats  # stats is already an ImageStats object
-            
+
             # 生成信息文本
             from pathlib import Path
             file_name = Path(image_file).name if image_file else "未知文件"
-            
-            info_text = f"""{load_info}
+
+            info_text = f"""已加载HDR图像
 尺寸: {image.shape[0]} x {image.shape[1]} x {image.shape[2] if len(image.shape) > 2 else 1}
 文件: {file_name}
 格式: {stats.input_format}
