@@ -1091,18 +1091,21 @@ class GradioInterface:
                      th1: float, th2: float, th3: float, th_strength: float,
                      image_file: str, channel: str) -> Tuple[np.ndarray, Dict, float, float, str]:
         """处理图像"""
-        
+
         if image_file is None:
             return None, {}, 0.0, 0.0, "未上传图像"
-        
+
+        # 检测输入格式
+        input_format = self.image_processor.detect_input_format(image_file)
+
         # 加载HDR图像
-        image, load_info = self.load_hdr_image(image_file)
+        image, processing_path = self.load_hdr_image(image_file)
         if image is None:
-            return None, {}, 0.0, 0.0, load_info
-            
+            return None, {}, 0.0, 0.0, processing_path
+
         try:
-            # 转换到PQ域
-            pq_image = self.image_processor.convert_to_pq_domain(image, "sRGB")
+            # 转换到PQ域，使用检测到的格式
+            pq_image = self.image_processor.convert_to_pq_domain(image, input_format)
             
             # 创建色调映射函数
             def tone_curve_func(L):
@@ -1120,16 +1123,17 @@ class GradioInterface:
             # 计算处理后统计
             processed_stats = self.image_processor.get_image_stats(mapped_image, channel)
             stats_dict = {
-                "最小PQ值": f"{processed_stats['min_pq']:.6f}",
-                "最大PQ值": f"{processed_stats['max_pq']:.6f}",
-                "平均PQ值": f"{processed_stats['avg_pq']:.6f}",
-                "方差": f"{processed_stats['var_pq']:.6f}",
-                "动态范围": f"{processed_stats['max_pq'] - processed_stats['min_pq']:.6f}"
+                "最小PQ值": f"{processed_stats.min_pq:.6f}",
+                "最大PQ值": f"{processed_stats.max_pq:.6f}",
+                "平均PQ值": f"{processed_stats.avg_pq:.6f}",
+                "方差": f"{processed_stats.var_pq:.6f}",
+                "动态范围": f"{processed_stats.max_pq - processed_stats.min_pq:.6f}"
             }
             
             # 计算质量指标
-            L_in = self.image_processor.extract_luminance(pq_image, channel)
-            L_out = self.image_processor.extract_luminance(mapped_image, channel)
+            from src.core.image_processor import extract_luminance
+            L_in = extract_luminance(pq_image, channel)
+            L_out = extract_luminance(mapped_image, channel)
             
             distortion = self.quality_calc.compute_perceptual_distortion(L_in, L_out)
             contrast = self.quality_calc.compute_local_contrast(L_out)

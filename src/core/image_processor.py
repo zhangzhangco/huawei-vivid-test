@@ -21,7 +21,7 @@ def extract_luminance(image: np.ndarray, mode: str = "Y") -> np.ndarray:
     提取亮度通道
 
     Args:
-        image: 输入图像 (H, W, 3) 或 (H, W)
+        image: 输入图像 (H, W), (H, W, 1), (H, W, 3) 或 (H, W, 4)
         mode: 提取模式 ("Y" 使用BT.2100权重 或 "MaxRGB")
 
     Returns:
@@ -31,12 +31,27 @@ def extract_luminance(image: np.ndarray, mode: str = "Y") -> np.ndarray:
         # 已经是单通道
         return image
 
-    if image.ndim == 3 and image.shape[2] == 3:
-        if mode == "Y":
-            # 使用 BT.2100 Y 权重
-            return np.tensordot(image, BT2100_Y_WEIGHTS, axes=([-1], [0]))
-        else:  # MaxRGB
-            return np.max(image, axis=-1)
+    if image.ndim == 3:
+        if image.shape[2] == 1:
+            # 单通道图像，直接压缩维度
+            return np.squeeze(image, axis=2)
+        elif image.shape[2] == 3:
+            # 3通道图像
+            if mode == "Y":
+                # 使用 BT.2100 Y 权重
+                return np.tensordot(image, BT2100_Y_WEIGHTS, axes=([-1], [0]))
+            else:  # MaxRGB
+                return np.max(image, axis=-1)
+        elif image.shape[2] == 4:
+            # 4通道图像，丢弃Alpha通道后处理RGB
+            rgb_image = image[:, :, :3]
+            if mode == "Y":
+                # 使用 BT.2100 Y 权重
+                return np.tensordot(rgb_image, BT2100_Y_WEIGHTS, axes=([-1], [0]))
+            else:  # MaxRGB
+                return np.max(rgb_image, axis=-1)
+        else:
+            raise ValueError(f"不支持的通道数: {image.shape[2]}")
     else:
         raise ValueError(f"不支持的图像维度: {image.shape}")
 
