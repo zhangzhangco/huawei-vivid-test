@@ -5,6 +5,7 @@ HDR色调映射专利可视化工具 - Gradio用户界面
 
 import gradio as gr
 import numpy as np
+import logging
 # 在导入 pyplot 之前设置后端，避免在无显示环境中触发警告
 import matplotlib
 matplotlib.use('Agg')
