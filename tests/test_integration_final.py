@@ -488,7 +488,7 @@ def run_final_integration_tests():
     print("=" * 60)
     
     # 创建测试实例
-    integration_tests = FinalIntegrationTests()
+    integration_tests = TestFinalIntegration()
     
     try:
         # 运行所有集成测试

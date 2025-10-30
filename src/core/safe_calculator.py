@@ -378,7 +378,7 @@ class SafeCalculator:
             self.ui_error_handler.create_system_error("validation_failed", reason=error_msg)
             return False, self.validator.DEFAULT_PARAMS.copy(), [error_msg]
             
-    def safe_phoenix_calculation_enhanced(self, L: Union[np.ndarray, float], p: float, a: float) -> Tuple[Union[np.ndarray, float], bool, str, Dict[str, Any]]:
+    def safe_phoenix_calculation_enhanced(self, L: Union[np.ndarray, float], p: float, a: float) -> Tuple[np.ndarray, np.ndarray, bool, str, Dict[str, Any]]:
         """
         增强的安全Phoenix曲线计算
         
@@ -397,6 +397,7 @@ class SafeCalculator:
             'numerical_stability': False,
             'recovery_applied': False
         }
+        L_input = np.asarray(L, dtype=np.float64)
         
         try:
             # 1. 参数验证
@@ -405,7 +406,7 @@ class SafeCalculator:
             detailed_status['parameter_validation'] = is_valid
             
             if not is_valid and not self.auto_recovery_enabled:
-                return L, False, f"参数验证失败: {'; '.join(validation_errors)}", detailed_status
+                return L_input, L_input.copy(), False, f"参数验证失败: {'; '.join(validation_errors)}", detailed_status
                 
             # 使用修正后的参数
             p_corrected = corrected_params.get('p', p)
@@ -423,13 +424,13 @@ class SafeCalculator:
                     if success:
                         p_corrected = recovered_params.get('p', 2.0)
                         a_corrected = recovered_params.get('a', 0.5)
-                        L_out = self.phoenix_calculator.compute_phoenix_curve(L, p_corrected, a_corrected)
+                        L_out = self.phoenix_calculator.compute_phoenix_curve(L_input, p_corrected, a_corrected)
                         detailed_status['recovery_applied'] = True
                         detailed_status['computation_success'] = True
                     else:
-                        return L, False, f"计算失败且恢复失败: {str(calc_error)}", detailed_status
+                        return L_input, L_input.copy(), False, f"计算失败且恢复失败: {str(calc_error)}", detailed_status
                 else:
-                    return L, False, f"计算失败: {str(calc_error)}", detailed_status
+                    return L_input, L_input.copy(), False, f"计算失败: {str(calc_error)}", detailed_status
                     
             # 3. 数值稳定性检查
             if isinstance(L_out, np.ndarray):
@@ -442,13 +443,13 @@ class SafeCalculator:
                         if success:
                             p_safe = recovered_params.get('p', 2.0)
                             a_safe = recovered_params.get('a', 0.5)
-                            L_out = self.phoenix_calculator.compute_phoenix_curve(L, p_safe, a_safe)
+                            L_out = self.phoenix_calculator.compute_phoenix_curve(L_input, p_safe, a_safe)
                             detailed_status['recovery_applied'] = True
                             detailed_status['numerical_stability'] = True
                         else:
-                            return L, False, "数值不稳定且恢复失败", detailed_status
+                            return L_input, L_input.copy(), False, "数值不稳定且恢复失败", detailed_status
                     else:
-                        return L, False, "计算结果包含NaN或Inf值", detailed_status
+                        return L_input, L_input.copy(), False, "计算结果包含NaN或Inf值", detailed_status
                 else:
                     detailed_status['numerical_stability'] = True
                     
@@ -467,13 +468,13 @@ class SafeCalculator:
                         if success:
                             p_mono = recovered_params.get('p', 2.0)
                             a_mono = recovered_params.get('a', 0.5)
-                            L_out = self.phoenix_calculator.compute_phoenix_curve(L, p_mono, a_mono)
+                            L_out = self.phoenix_calculator.compute_phoenix_curve(L_input, p_mono, a_mono)
                             detailed_status['recovery_applied'] = True
                             detailed_status['monotonicity_check'] = self.phoenix_calculator.validate_monotonicity(L_out)
                         else:
-                            return L, False, "曲线非单调且恢复失败", detailed_status
+                            return L_input, L_input.copy(), False, "曲线非单调且恢复失败", detailed_status
                     else:
-                        return L, False, "曲线非单调，已回退到恒等映射", detailed_status
+                        return L_input, L_input.copy(), False, "曲线非单调，已回退到恒等映射", detailed_status
             else:
                 detailed_status['monotonicity_check'] = True
                 
@@ -488,7 +489,7 @@ class SafeCalculator:
             if validation_errors:
                 status_msg += f" (参数已修正: {len(validation_errors)}个问题)"
                 
-            return L_out, True, status_msg, detailed_status
+            return L_input, L_out if isinstance(L_out, np.ndarray) else np.asarray(L_out), True, status_msg, detailed_status
             
         except Exception as e:
             self.error_count += 1
@@ -498,7 +499,7 @@ class SafeCalculator:
             if self.error_count > self.max_errors:
                 self.ui_error_handler.create_system_error("too_many_errors")
                 
-            return L, False, error_msg, detailed_status
+            return L_input, L_input.copy(), False, error_msg, detailed_status
             
     def safe_image_validation(self, image: np.ndarray, max_pixels: int = 10_000_000) -> Tuple[bool, str, Optional[np.ndarray]]:
         """

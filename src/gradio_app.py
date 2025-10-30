@@ -703,7 +703,7 @@ class GradioInterface:
             
             if not success:
                 error_plot = self.ui_error_handler.create_error_plot(status_msg, "curve")
-                return error_plot, 0.0, 0.0, f"计算失败: {status_msg}", 0.0
+                return error_plot, 0.0, 0.0, f"Calculation failed: {status_msg}", 0.0
                 
             # 样条曲线处理
             final_curve = L_out.copy()
@@ -782,7 +782,7 @@ class GradioInterface:
         except Exception as e:
             processing_time = (time.time() - start_time) * 1000
             self.ui_error_handler.create_calculation_error("曲线更新", str(e))
-            return self.ui_error_handler.create_error_plot(str(e), "curve"), 0.0, 0.0, "计算失败", processing_time
+            return self.ui_error_handler.create_error_plot(str(e), "curve"), 0.0, 0.0, "Calculation failed", processing_time
             
     def _compute_simple_spline(self, L: np.ndarray, nodes: List[float]) -> np.ndarray:
         """计算简化的样条曲线"""
@@ -830,16 +830,9 @@ class GradioInterface:
         ax.set_xlim(0, 1)
         ax.set_ylim(0, 1)
         
-        # 设置中文字体（如果可用）
-        try:
-            plt.rcParams['font.sans-serif'] = ['SimHei', 'WenQuanYi Micro Hei', 'DejaVu Sans']
-            plt.rcParams['axes.unicode_minus'] = False
-        except:
-            # 如果中文字体不可用，使用英文标签
-            ax.set_xlabel('Input Luminance (PQ Domain)', fontsize=12)
-            ax.set_ylabel('Output Luminance (PQ Domain)', fontsize=12)
-            ax.set_title('HDR Tone Mapping Curve', fontsize=14, fontweight='bold')
-        
+        ax.set_xlabel('Input Luminance (PQ Domain)', fontsize=12)
+        ax.set_ylabel('Output Luminance (PQ Domain)', fontsize=12)
+        ax.set_title('HDR Tone Mapping Curve', fontsize=14, fontweight='bold')
         plt.tight_layout()
         return fig
         
@@ -906,22 +899,12 @@ class GradioInterface:
         # 设置坐标轴
         ax.set_xlim(0, 1)
         ax.set_ylim(0, 1)
-        ax.set_xlabel('输入亮度 (PQ域)', fontsize=12)
-        ax.set_ylabel('输出亮度 (PQ域)', fontsize=12)
-        ax.set_title('Phoenix色调映射曲线', fontsize=14)
+        ax.set_xlabel('Input Luminance (PQ Domain)', fontsize=12)
+        ax.set_ylabel('Output Luminance (PQ Domain)', fontsize=12)
+        ax.set_title('Phoenix Tone-Mapping Curve', fontsize=14)
         ax.grid(True, alpha=0.3)
         ax.legend(loc='lower right')
-        
-        # 设置中文字体（如果可用）
-        try:
-            plt.rcParams['font.sans-serif'] = ['SimHei', 'WenQuanYi Micro Hei', 'DejaVu Sans']
-            plt.rcParams['axes.unicode_minus'] = False
-        except:
-            # 如果中文字体不可用，使用英文标签
-            ax.set_xlabel('Input Luminance (PQ Domain)', fontsize=12)
-            ax.set_ylabel('Output Luminance (PQ Domain)', fontsize=12)
-            ax.set_title('Phoenix Tone Mapping Curve', fontsize=14)
-            
+
         plt.tight_layout()
         return fig
         

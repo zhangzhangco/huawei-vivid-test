@@ -2,6 +2,10 @@
 性能监控模块测试
 """
 
+import sys
+import os
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+
 import pytest
 import numpy as np
 import time

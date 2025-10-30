@@ -3,6 +3,10 @@
 测试Phoenix曲线计算、PQ转换、参数验证、质量指标计算等核心功能
 """
 
+import sys
+import os
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+
 import pytest
 import numpy as np
 import os

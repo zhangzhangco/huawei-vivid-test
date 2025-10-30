@@ -3,6 +3,10 @@
 测试UI错误处理器、错误恢复系统和边界检查器
 """
 
+import sys
+import os
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+
 import pytest
 import numpy as np
 from unittest.mock import Mock, patch

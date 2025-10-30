@@ -4,6 +4,7 @@
 """
 
 import os
+os.environ.setdefault("OPENCV_IO_ENABLE_OPENEXR", "1")
 import numpy as np
 import cv2
 from typing import Tuple, Dict, Callable, Optional, Union, Any
