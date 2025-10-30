@@ -154,6 +154,58 @@ class AsyncTaskManager:
         self.executor.shutdown(wait=True)
 
 
+def with_quality_assessment(func):
+    """
+    质量评估装饰器
+    实现装饰器模式确保与Phoenix曲线处理的无缝集成
+    """
+    def wrapper(*args, **kwargs):
+        result = func(*args, **kwargs)  # 原始处理
+        
+        # 如果处理成功且包含Lin/Lout数据，进行质量评估
+        if (result.get('success', False) and 
+            'lin_lout_data' in result and 
+            result['lin_lout_data'] is not None):
+            
+            try:
+                from .metrics_extension import ExtendedMetrics
+                from .ui_integration import UIIntegration
+                
+                metrics_calculator = ExtendedMetrics()
+                ui_integration = UIIntegration()
+                
+                lin_lout_data = result['lin_lout_data']
+                
+                # 计算质量指标（如果尚未计算）
+                if 'quality_metrics' not in result or not result['quality_metrics']:
+                    quality_metrics = metrics_calculator.get_all_metrics(
+                        lin_lout_data['lin'], 
+                        lin_lout_data['lout']
+                    )
+                    result['quality_metrics'] = quality_metrics
+                
+                # 更新UI显示（如果需要）
+                quality_metrics = result['quality_metrics']
+                status = quality_metrics.get('Exposure_status', '未知')
+                
+                # 生成UI更新数据
+                result['ui_updates'] = {
+                    'quality_summary': ui_integration.update_quality_summary(quality_metrics, status),
+                    'artist_tips': ui_integration.generate_artist_tips(quality_metrics, status),
+                    'pq_histogram_data': {
+                        'lin': lin_lout_data['lin'],
+                        'lout': lin_lout_data['lout']
+                    }
+                }
+                
+            except Exception as e:
+                logging.warning(f"质量评估装饰器执行失败: {e}")
+                # 不影响主流程，只记录警告
+        
+        return result
+    return wrapper
+
+
 class ProgressHandler:
     """进度处理器主类"""
     
@@ -162,6 +214,7 @@ class ProgressHandler:
         self.progress_queue = queue.Queue()
         self._shutdown = False
         
+    @with_quality_assessment
     def process_image_with_progress(self, image: np.ndarray, 
                                   tone_curve_func: Callable,
                                   luminance_channel: str = "MaxRGB",
@@ -239,8 +292,9 @@ class ProgressHandler:
             if progress_callback:
                 progress_callback(update)
                 
-            # 应用色调映射
-            mapped_image = processor.apply_tone_mapping(pq_image, tone_curve_func, luminance_channel)
+            # 应用色调映射并提取Lin/Lout数据
+            mapped_image, lin_lout_data = processor.apply_tone_mapping_with_data_extraction(
+                pq_image, tone_curve_func, luminance_channel)
             update = tracker.update_stage_progress(0.8, "应用色调映射")
             if progress_callback:
                 progress_callback(update)
@@ -259,9 +313,32 @@ class ProgressHandler:
             stats_before = processor.get_image_stats(pq_image, luminance_channel)
             stats_after = processor.get_image_stats(mapped_image, luminance_channel)
             
-            update = tracker.update_stage_progress(0.5, "计算统计信息")
+            update = tracker.update_stage_progress(0.3, "计算统计信息")
             if progress_callback:
                 progress_callback(update)
+            
+            # 计算质量评估指标
+            quality_metrics = {}
+            try:
+                from .metrics_extension import ExtendedMetrics
+                from .ui_integration import UIIntegration
+                
+                metrics_calculator = ExtendedMetrics()
+                ui_integration = UIIntegration()
+                
+                # 计算质量指标
+                quality_metrics = metrics_calculator.get_all_metrics(
+                    lin_lout_data['lin'], 
+                    lin_lout_data['lout']
+                )
+                
+                update = tracker.update_stage_progress(0.6, "计算质量指标")
+                if progress_callback:
+                    progress_callback(update)
+                    
+            except Exception as e:
+                # 质量评估失败不应影响主流程
+                quality_metrics = {'error': f'质量评估失败: {str(e)}'}
                 
             # 转换为显示格式
             display_image = processor.convert_for_display(mapped_image)
@@ -287,6 +364,8 @@ class ProgressHandler:
                 'display_image': display_image,
                 'stats_before': stats_before,
                 'stats_after': stats_after,
+                'lin_lout_data': lin_lout_data,  # 新增：Lin/Lout数据
+                'quality_metrics': quality_metrics,  # 新增：质量评估指标
                 'processing_info': {
                     'original_shape': original_shape,
                     'final_shape': image.shape,

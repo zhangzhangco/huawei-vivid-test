@@ -262,6 +262,55 @@ class ImageProcessor:
         else:
             # 灰度图像，直接应用色调映射
             return tone_curve_func(np.clip(image, 1e-8, 1.0))
+    
+    def apply_tone_mapping_with_data_extraction(self, image: np.ndarray, 
+                                              tone_curve_func: Callable[[np.ndarray], np.ndarray],
+                                              luminance_channel: str = "MaxRGB") -> Tuple[np.ndarray, Dict[str, np.ndarray]]:
+        """应用色调映射并提取Lin/Lout数据用于质量评估
+        
+        Args:
+            image: PQ域输入图像
+            tone_curve_func: 色调映射函数
+            luminance_channel: 亮度通道类型 ("MaxRGB" 或 "Y")
+            
+        Returns:
+            (色调映射后的图像, Lin/Lout数据字典)
+        """
+        if image.ndim == 3:
+            # 提取亮度通道
+            L_in = extract_luminance(image, luminance_channel)
+                
+            # 应用色调映射到亮度通道
+            L_in_safe = np.clip(L_in, 1e-8, 1.0)  # 避免除零
+            L_out = tone_curve_func(L_in_safe)
+            
+            # 计算缩放比例，保持色度
+            ratio = np.divide(L_out, L_in_safe, 
+                            out=np.ones_like(L_out), 
+                            where=L_in_safe > 1e-8)
+            
+            # 应用比例到所有通道
+            ratio_expanded = ratio.reshape(L_in.shape + (1,))
+            mapped_image = image * ratio_expanded
+            
+            # 提取Lin/Lout数据用于质量评估
+            lin_lout_data = {
+                'lin': L_in_safe.copy(),  # 输入亮度数据
+                'lout': L_out.copy()      # 输出亮度数据
+            }
+            
+            return np.clip(mapped_image, 0, 1), lin_lout_data
+        else:
+            # 灰度图像，直接应用色调映射
+            L_in_safe = np.clip(image, 1e-8, 1.0)
+            L_out = tone_curve_func(L_in_safe)
+            
+            lin_lout_data = {
+                'lin': L_in_safe.copy(),
+                'lout': L_out.copy()
+            }
+            
+            return L_out, lin_lout_data
             
     def resize_for_display(self, image: np.ndarray, use_auto_downsampler: bool = True) -> Tuple[np.ndarray, Dict[str, Any]]:
         """调整显示尺寸 (等比缩放到最长边≤max_image_size)

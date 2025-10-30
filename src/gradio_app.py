@@ -122,6 +122,24 @@ class GradioInterface:
         # UI状态
         self.ui_state = UIState()
         
+        # 质量评估扩展模块
+        try:
+            from src.core.metrics_extension import ExtendedMetrics
+            from src.core.ui_integration import UIIntegration
+            
+            self.extended_metrics = ExtendedMetrics()
+            self.ui_integration = UIIntegration()
+            self.quality_assessment_enabled = True
+            
+        except ImportError as e:
+            logging.warning(f"质量评估模块导入失败: {e}")
+            self.extended_metrics = None
+            self.ui_integration = None
+            self.quality_assessment_enabled = False
+        
+        # 验证质量评估模块集成
+        self._verify_quality_assessment_integration()
+        
         # 设置默认参数
         self.default_params = {
             'p': 2.0,
@@ -1272,7 +1290,9 @@ class GradioInterface:
                         "quality_metrics": {
                             "distortion": 0.0,  # 可以从当前UI状态获取
                             "contrast": 0.0,   # 可以从当前UI状态获取
-                            "recommendation": ""
+                            "recommendation": "",
+                            # 集成扩展质量指标
+                            "extended_metrics": getattr(self.ui_state, 'current_quality_metrics', {})
                         }
                     }
 
@@ -1291,6 +1311,10 @@ class GradioInterface:
                     "curve_data": {
                         "input_luminance": L.tolist(),
                         "output_luminance": L_out.tolist()
+                    },
+                    "quality_metrics": {
+                        # 集成扩展质量指标到JSON输出
+                        "extended_metrics": getattr(self.ui_state, 'current_quality_metrics', {})
                     }
                 }
 
@@ -1605,7 +1629,10 @@ class GradioInterface:
                 "动态范围": f"{stats_after.max_pq - stats_after.min_pq:.6f}"
             }
             
-            # 计算质量指标
+            # 获取质量指标（从新的质量评估模块）
+            quality_metrics = result.get('quality_metrics', {})
+            
+            # 保持向后兼容性，计算原有的质量指标
             stats_before = result['stats_before']
             L_in = np.full(1000, stats_before.avg_pq)  # 简化的输入
             L_out = np.full(1000, stats_after.avg_pq)  # 简化的输出
@@ -1613,6 +1640,9 @@ class GradioInterface:
             distortion = self.quality_calc.compute_perceptual_distortion(L_in, L_out)
             contrast = self.quality_calc.compute_local_contrast(L_out)
             recommendation = self.quality_calc.recommend_mode_with_hysteresis(distortion)
+            
+            # 存储质量指标供导出使用
+            self.ui_state.current_quality_metrics = quality_metrics
             
             # 构建性能状态信息
             processing_info = result['processing_info']
@@ -1646,6 +1676,33 @@ class GradioInterface:
         except Exception as e:
             error_msg = f"性能状态更新失败: {str(e)}"
             return error_msg, error_msg
+    
+    def _verify_quality_assessment_integration(self):
+        """验证质量评估模块集成状态"""
+        try:
+            if self.quality_assessment_enabled:
+                # 测试基本功能
+                test_lin = np.linspace(0.1, 0.9, 100)
+                test_lout = test_lin * 0.8  # 简单的测试映射
+                
+                # 测试指标计算
+                metrics = self.extended_metrics.get_all_metrics(test_lin, test_lout)
+                
+                # 测试UI集成
+                status = metrics.get('Exposure_status', '未知')
+                ui_summary = self.ui_integration.update_quality_summary(metrics, status)
+                
+                logging.info("✅ 质量评估模块集成验证成功")
+                logging.info(f"   - 计算指标数量: {len(metrics)}")
+                logging.info(f"   - 状态评估: {status}")
+                logging.info(f"   - UI组件: {len(ui_summary)} 项")
+                
+            else:
+                logging.warning("⚠️ 质量评估模块未启用")
+                
+        except Exception as e:
+            logging.error(f"❌ 质量评估模块集成验证失败: {e}")
+            self.quality_assessment_enabled = False
             
     def reset_performance_metrics(self) -> Tuple[str, str]:
         """重置性能指标"""

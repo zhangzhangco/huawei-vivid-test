@@ -28,6 +28,9 @@ from .progress_handler import (
     ProgressHandler, ProgressTracker, AsyncTaskManager, ProgressUpdate,
     get_progress_handler, create_gradio_progress_callback
 )
+from .metrics_extension import ExtendedMetrics
+from .config_manager import ConfigManager
+from .ui_integration import UIIntegration
 
 __all__ = [
     'PQConverter',
@@ -87,5 +90,8 @@ __all__ = [
     'AsyncTaskManager',
     'ProgressUpdate',
     'get_progress_handler',
-    'create_gradio_progress_callback'
+    'create_gradio_progress_callback',
+    'ExtendedMetrics',
+    'ConfigManager',
+    'UIIntegration'
 ]
