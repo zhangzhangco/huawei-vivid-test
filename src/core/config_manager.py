@@ -8,8 +8,7 @@ import logging
 from typing import Dict, Any, Optional
 from pathlib import Path
 
-# 配置日志
-logging.basicConfig(level=logging.INFO)
+# 使用模块级别的logger，避免污染全局日志配置
 logger = logging.getLogger(__name__)
 
 

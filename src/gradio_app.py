@@ -397,6 +397,28 @@ class GradioInterface:
                     interactive=False
                 )
                 
+        # HDR质量评估扩展
+        with gr.Group():
+            gr.Markdown("## HDR质量评估")
+            
+            # 质量状态显示
+            self.quality_status_html = gr.HTML(
+                value="<div id='quality-status'>等待处理...</div>",
+                label="质量状态"
+            )
+            
+            # PQ直方图显示
+            self.pq_histogram_plot = gr.Plot(
+                label="PQ直方图对比",
+                value=None
+            )
+            
+            # 艺术家模式提示
+            self.artist_tips_html = gr.HTML(
+                value="<div id='artist-tips'>暂无建议</div>",
+                label="调整建议"
+            )
+        
         # 系统状态和错误反馈
         with gr.Group():
             gr.Markdown("## 系统状态")
@@ -664,7 +686,8 @@ class GradioInterface:
             outputs=[
                 self.image_output, self.processed_stats,
                 self.distortion_number, self.contrast_number,
-                self.mode_recommendation, self.performance_status
+                self.mode_recommendation, self.performance_status,
+                self.pq_histogram_plot, self.quality_status_html, self.artist_tips_html
             ]
         )
         
@@ -1590,16 +1613,16 @@ class GradioInterface:
             
     def process_image_with_progress(self, p: float, a: float, enable_spline: bool,
                                   th1: float, th2: float, th3: float, th_strength: float,
-                                  image_file: str, channel: str) -> Tuple[np.ndarray, Dict, float, float, str, str]:
+                                  image_file: str, channel: str) -> Tuple[np.ndarray, Dict, float, float, str, str, object, str, str]:
         """带进度指示的图像处理"""
         
         if image_file is None:
-            return None, {}, 0.0, 0.0, "未上传图像", "无图像"
+            return None, {}, 0.0, 0.0, "未上传图像", "无图像", None, "等待处理...", "暂无建议"
         
         # 加载HDR图像
         image, load_info = self.load_hdr_image(image_file)
         if image is None:
-            return None, {}, 0.0, 0.0, load_info, "加载失败"
+            return None, {}, 0.0, 0.0, load_info, "加载失败", None, "加载失败", "暂无建议"
             
         try:
             # 创建色调映射函数
@@ -1614,20 +1637,32 @@ class GradioInterface:
             )
             
             if not result['success']:
-                return None, {}, 0.0, 0.0, f"处理失败: {result['error']}", "处理失败"
+                return None, {}, 0.0, 0.0, f"处理失败: {result['error']}", "处理失败", None, "处理失败", "暂无建议"
                 
             # 转换为显示格式
             display_image = result['display_image']
             
-            # 构建统计信息
+            # 构建统计信息 - 集成质量评估指标
             stats_after = result['stats_after']
-            stats_dict = {
-                "最小PQ值": f"{stats_after.min_pq:.6f}",
-                "最大PQ值": f"{stats_after.max_pq:.6f}",
-                "平均PQ值": f"{stats_after.avg_pq:.6f}",
-                "方差": f"{stats_after.var_pq:.6f}",
-                "动态范围": f"{stats_after.max_pq - stats_after.min_pq:.6f}"
-            }
+            
+            # 如果有质量指标，显示格式化的质量数据
+            if quality_metrics:
+                stats_dict = {
+                    "高光饱和比例": f"{quality_metrics.get('S_ratio', 0) * 100:.1f}%",
+                    "暗部压缩比例": f"{quality_metrics.get('C_shadow', 0) * 100:.1f}%", 
+                    "动态范围保持率": f"{quality_metrics.get('R_DR', 1.0):.2f}",
+                    "亮度漂移": f"{quality_metrics.get('ΔL_mean_norm', 0) * 100:.1f}%",
+                    "直方图重叠度": f"{quality_metrics.get('Hist_overlap', 0) * 100:.1f}%"
+                }
+            else:
+                # 回退到原有显示格式
+                stats_dict = {
+                    "最小PQ值": f"{stats_after.min_pq:.6f}",
+                    "最大PQ值": f"{stats_after.max_pq:.6f}",
+                    "平均PQ值": f"{stats_after.avg_pq:.6f}",
+                    "方差": f"{stats_after.var_pq:.6f}",
+                    "动态范围": f"{stats_after.max_pq - stats_after.min_pq:.6f}"
+                }
             
             # 获取质量指标（从新的质量评估模块）
             quality_metrics = result.get('quality_metrics', {})
@@ -1650,12 +1685,36 @@ class GradioInterface:
             
             if processing_info.get('downsampled', False):
                 performance_status += f" | 已降采样: {processing_info['downsample_reason']}"
+            
+            # 生成质量评估UI内容
+            pq_histogram_plot = None
+            quality_status_html = "等待处理..."
+            artist_tips_html = "暂无建议"
+            
+            if quality_metrics:
+                # 获取Lin和Lout数据用于直方图
+                lin_lout_data = result.get('lin_lout_data')
                 
-            return display_image, stats_dict, distortion, contrast, recommendation, performance_status
+                if lin_lout_data is not None:
+                    lin_data = lin_lout_data.get('lin')
+                    lout_data = lin_lout_data.get('lout')
+                    
+                    if lin_data is not None and lout_data is not None:
+                        # 创建PQ直方图
+                        pq_histogram_plot = self.ui_integration.update_pq_histogram(lin_data, lout_data)
+                
+                # 创建质量状态显示
+                status = quality_metrics.get('Exposure_status', '未知')
+                quality_status_html = self.ui_integration.create_quality_status_display(quality_metrics, status)
+                
+                # 创建艺术家提示
+                artist_tips_html = self.ui_integration.create_artist_tips_display(quality_metrics, status)
+                
+            return display_image, stats_dict, distortion, contrast, recommendation, performance_status, pq_histogram_plot, quality_status_html, artist_tips_html
             
         except Exception as e:
             error_msg = f"图像处理失败: {str(e)}"
-            return None, {}, 0.0, 0.0, error_msg, error_msg
+            return None, {}, 0.0, 0.0, error_msg, error_msg, None, error_msg, "暂无建议"
             
     def update_performance_display(self) -> Tuple[str, str]:
         """更新性能显示"""

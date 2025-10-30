@@ -234,17 +234,12 @@ class ExtendedMetrics:
             s_ratio = 0.0
         
         # 计算C_shadow (暗部压缩比例)
-        # 定义暗部区域为PQ值 < 0.1的像素
-        shadow_threshold = 0.1
-        shadow_mask_in = lin_flat < shadow_threshold
+        # 按照建议：简单地用输出中暗部像素的比例
+        shadow_threshold = 0.05  # 使用0.05作为暗部阈值
         shadow_mask_out = lout_flat < shadow_threshold
         
-        shadow_pixels_in = np.sum(shadow_mask_in)
-        shadow_pixels_out = np.sum(shadow_mask_out)
-        
-        if shadow_pixels_in > 0:
-            c_shadow = (shadow_pixels_out - shadow_pixels_in) / shadow_pixels_in
-            c_shadow = max(0.0, c_shadow)  # 只考虑压缩情况
+        if total_pixels > 0:
+            c_shadow = np.sum(shadow_mask_out) / total_pixels
         else:
             c_shadow = 0.0
         
@@ -258,13 +253,15 @@ class ExtendedMetrics:
             r_dr = 1.0
         
         # 计算ΔL_mean_norm (归一化平均亮度漂移)
+        # 按照草稿要求：亮度差值除以动态范围
         mean_in = np.mean(lin_flat)
         mean_out = np.mean(lout_flat)
+        dr_in = np.max(lin_flat) - np.min(lin_flat)
         
-        if mean_in > self.eps:
-            delta_l_mean_norm = mean_out / mean_in
+        if dr_in > self.eps:
+            delta_l_mean_norm = abs(mean_out - mean_in) / dr_in
         else:
-            delta_l_mean_norm = 1.0
+            delta_l_mean_norm = 0.0
         
         return {
             'S_ratio': float(s_ratio),
@@ -402,20 +399,13 @@ class ExtendedMetrics:
         
         # 批量计算所有阈值掩码
         highlight_mask = lout_flat > 0.9
-        shadow_mask_in = lin_flat < 0.1
-        shadow_mask_out = lout_flat < 0.1
+        shadow_mask_out = lout_flat < 0.05  # 使用0.05作为暗部阈值
         
         # S_ratio (高光饱和比例)
         s_ratio = np.sum(highlight_mask) / total_pixels if total_pixels > 0 else 0.0
         
-        # C_shadow (暗部压缩比例)
-        shadow_pixels_in = np.sum(shadow_mask_in)
-        shadow_pixels_out = np.sum(shadow_mask_out)
-        
-        if shadow_pixels_in > 0:
-            c_shadow = max(0.0, (shadow_pixels_out - shadow_pixels_in) / shadow_pixels_in)
-        else:
-            c_shadow = 0.0
+        # C_shadow (暗部压缩比例) - 简化为输出暗部像素比例
+        c_shadow = np.sum(shadow_mask_out) / total_pixels if total_pixels > 0 else 0.0
         
         # R_DR (动态范围保持率) - 向量化计算
         dr_in = np.ptp(lin_flat)  # ptp = max - min，更高效
@@ -424,10 +414,12 @@ class ExtendedMetrics:
         r_dr = dr_out / dr_in if dr_in > self.eps else 1.0
         
         # ΔL_mean_norm (归一化平均亮度漂移) - 向量化计算
+        # 按照草稿要求：亮度差值除以动态范围
         mean_in = np.mean(lin_flat)
         mean_out = np.mean(lout_flat)
+        dr_in = np.max(lin_flat) - np.min(lin_flat)
         
-        delta_l_mean_norm = mean_out / mean_in if mean_in > self.eps else 1.0
+        delta_l_mean_norm = abs(mean_out - mean_in) / dr_in if dr_in > self.eps else 0.0
         
         return {
             'S_ratio': float(s_ratio),
@@ -463,8 +455,8 @@ class ExtendedMetrics:
             hist_in_norm = hist_in / sum_in
             hist_out_norm = hist_out / sum_out
             
-            # 向量化重叠度计算
-            overlap = np.sum(np.minimum(hist_in_norm, hist_out_norm))
+            # 按照草稿要求：1 - 0.5 * Σ|h_in - h_out|
+            overlap = 1.0 - 0.5 * np.sum(np.abs(hist_in_norm - hist_out_norm))
         else:
             overlap = 0.0
         
@@ -492,17 +484,14 @@ class ExtendedMetrics:
         
         # 批量计算所有阈值掩码
         highlight_mask = lout_flat > 0.9
-        shadow_mask_in = lin_flat < 0.1
-        shadow_mask_out = lout_flat < 0.1
+        shadow_mask_out = lout_flat < 0.05  # 使用0.05作为暗部阈值
         
         # 向量化计算所有指标
         # S_ratio (高光饱和比例)
         s_ratio = np.sum(highlight_mask) / total_pixels if total_pixels > 0 else 0.0
         
-        # C_shadow (暗部压缩比例)
-        shadow_pixels_in = np.sum(shadow_mask_in)
-        shadow_pixels_out = np.sum(shadow_mask_out)
-        c_shadow = max(0.0, (shadow_pixels_out - shadow_pixels_in) / shadow_pixels_in) if shadow_pixels_in > 0 else 0.0
+        # C_shadow (暗部压缩比例) - 简化为输出暗部像素比例
+        c_shadow = np.sum(shadow_mask_out) / total_pixels if total_pixels > 0 else 0.0
         
         # R_DR (动态范围保持率) - 使用预计算的min/max
         dr_in = lin_max - lin_min
@@ -510,7 +499,9 @@ class ExtendedMetrics:
         r_dr = dr_out / dr_in if dr_in > self.eps else 1.0
         
         # ΔL_mean_norm (归一化平均亮度漂移) - 使用预计算的mean
-        delta_l_mean_norm = lout_mean / lin_mean if lin_mean > self.eps else 1.0
+        # 按照草稿要求：亮度差值除以动态范围
+        dr_in = lin_max - lin_min
+        delta_l_mean_norm = abs(lout_mean - lin_mean) / dr_in if dr_in > self.eps else 0.0
         
         # 直方图重叠度 - 优化版本
         hist_overlap = self._calculate_histogram_overlap_optimized(lin_flat, lout_flat)
