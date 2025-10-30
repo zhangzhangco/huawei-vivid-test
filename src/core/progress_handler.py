@@ -161,6 +161,10 @@ def with_quality_assessment(func):
     """
     def wrapper(*args, **kwargs):
         result = func(*args, **kwargs)  # 原始处理
+        if not args:
+            return result
+        
+        self = args[0]
         
         # 如果处理成功且包含Lin/Lout数据，进行质量评估
         if (result.get('success', False) and 
@@ -168,17 +172,21 @@ def with_quality_assessment(func):
             result['lin_lout_data'] is not None):
             
             try:
-                from .metrics_extension import ExtendedMetrics
-                from .ui_integration import UIIntegration
+                from .metrics_extension import ExtendedMetrics  # noqa: F401
+                from .ui_integration import UIIntegration  # noqa: F401
                 
-                metrics_calculator = ExtendedMetrics()
-                ui_integration = UIIntegration()
+                if not hasattr(self, 'extended_metrics') or self.extended_metrics is None:
+                    from .metrics_extension import ExtendedMetrics as _Ext
+                    self.extended_metrics = _Ext()
+                if not hasattr(self, 'ui_integration') or self.ui_integration is None:
+                    from .ui_integration import UIIntegration as _UI
+                    self.ui_integration = _UI()
                 
                 lin_lout_data = result['lin_lout_data']
                 
                 # 计算质量指标（如果尚未计算）
                 if 'quality_metrics' not in result or not result['quality_metrics']:
-                    quality_metrics = metrics_calculator.get_all_metrics(
+                    quality_metrics = self.extended_metrics.get_all_metrics(
                         lin_lout_data['lin'], 
                         lin_lout_data['lout']
                     )
@@ -190,8 +198,8 @@ def with_quality_assessment(func):
                 
                 # 生成UI更新数据
                 result['ui_updates'] = {
-                    'quality_summary': ui_integration.update_quality_summary(quality_metrics, status),
-                    'artist_tips': ui_integration.generate_artist_tips(quality_metrics, status),
+                    'quality_summary': self.ui_integration.update_quality_summary(quality_metrics, status),
+                    'artist_tips': self.ui_integration.generate_artist_tips(quality_metrics, status),
                     'pq_histogram_data': {
                         'lin': lin_lout_data['lin'],
                         'lout': lin_lout_data['lout']
@@ -209,10 +217,21 @@ def with_quality_assessment(func):
 class ProgressHandler:
     """进度处理器主类"""
     
-    def __init__(self):
+    def __init__(self, extended_metrics: Optional['ExtendedMetrics'] = None, ui_integration: Optional['UIIntegration'] = None):
         self.task_manager = AsyncTaskManager()
         self.progress_queue = queue.Queue()
         self._shutdown = False
+        
+        # 质量评估模块在实例级缓存，避免重复初始化
+        self.extended_metrics = extended_metrics
+        self.ui_integration = ui_integration
+    
+    def set_quality_modules(self, extended_metrics: Optional['ExtendedMetrics'], ui_integration: Optional['UIIntegration']) -> None:
+        """注入质量评估相关模块，便于复用"""
+        if extended_metrics is not None:
+            self.extended_metrics = extended_metrics
+        if ui_integration is not None:
+            self.ui_integration = ui_integration
         
     @with_quality_assessment
     def process_image_with_progress(self, image: np.ndarray, 
@@ -320,14 +339,18 @@ class ProgressHandler:
             # 计算质量评估指标
             quality_metrics = {}
             try:
-                from .metrics_extension import ExtendedMetrics
-                from .ui_integration import UIIntegration
+                from .metrics_extension import ExtendedMetrics  # noqa: F401
+                from .ui_integration import UIIntegration  # noqa: F401
                 
-                metrics_calculator = ExtendedMetrics()
-                ui_integration = UIIntegration()
+                if self.extended_metrics is None:
+                    from .metrics_extension import ExtendedMetrics as _Ext
+                    self.extended_metrics = _Ext()
+                if self.ui_integration is None:
+                    from .ui_integration import UIIntegration as _UI
+                    self.ui_integration = _UI()
                 
                 # 计算质量指标
-                quality_metrics = metrics_calculator.get_all_metrics(
+                quality_metrics = self.extended_metrics.get_all_metrics(
                     lin_lout_data['lin'], 
                     lin_lout_data['lout']
                 )

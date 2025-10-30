@@ -1642,20 +1642,20 @@ class GradioInterface:
             # 转换为显示格式
             display_image = result['display_image']
             
-            # 构建统计信息 - 集成质量评估指标
-            stats_after = result['stats_after']
+            # 获取质量指标（来自扩展模块）
+            quality_metrics = result.get('quality_metrics', {})
             
-            # 如果有质量指标，显示格式化的质量数据
-            if quality_metrics:
+            # 构建统计信息 - 优先显示质量评估数据
+            stats_after = result['stats_after']
+            if quality_metrics and not quality_metrics.get('error'):
                 stats_dict = {
-                    "高光饱和比例": f"{quality_metrics.get('S_ratio', 0) * 100:.1f}%",
-                    "暗部压缩比例": f"{quality_metrics.get('C_shadow', 0) * 100:.1f}%", 
+                    "高光饱和比例": f"{quality_metrics.get('S_ratio', 0.0) * 100:.1f}%",
+                    "暗部压缩比例": f"{quality_metrics.get('C_shadow', 0.0) * 100:.1f}%", 
                     "动态范围保持率": f"{quality_metrics.get('R_DR', 1.0):.2f}",
-                    "亮度漂移": f"{quality_metrics.get('ΔL_mean_norm', 0) * 100:.1f}%",
-                    "直方图重叠度": f"{quality_metrics.get('Hist_overlap', 0) * 100:.1f}%"
+                    "亮度漂移": f"{quality_metrics.get('ΔL_mean_norm', 0.0) * 100:.1f}%",
+                    "直方图重叠度": f"{quality_metrics.get('Hist_overlap', 0.0) * 100:.1f}%"
                 }
             else:
-                # 回退到原有显示格式
                 stats_dict = {
                     "最小PQ值": f"{stats_after.min_pq:.6f}",
                     "最大PQ值": f"{stats_after.max_pq:.6f}",
@@ -1663,9 +1663,6 @@ class GradioInterface:
                     "方差": f"{stats_after.var_pq:.6f}",
                     "动态范围": f"{stats_after.max_pq - stats_after.min_pq:.6f}"
                 }
-            
-            # 获取质量指标（从新的质量评估模块）
-            quality_metrics = result.get('quality_metrics', {})
             
             # 保持向后兼容性，计算原有的质量指标
             stats_before = result['stats_before']

@@ -131,13 +131,13 @@ class UIIntegration:
         try:
             # 验证输入数据
             if lin is None or lout is None:
-                return self._create_error_histogram("输入数据为空")
+                return self._create_error_histogram("Input data is empty")
             
             lin_array = np.asarray(lin, dtype=np.float32)
             lout_array = np.asarray(lout, dtype=np.float32)
             
             if lin_array.size == 0 or lout_array.size == 0:
-                return self._create_error_histogram("输入数组为空")
+                return self._create_error_histogram("Input arrays are empty")
             
             # 展平数组
             lin_flat = lin_array.flatten()
@@ -162,9 +162,9 @@ class UIIntegration:
             ax.plot(bin_centers, hist_out, 'r-', linewidth=2, label='Output', alpha=0.8)
             
             # 设置图表属性
-            ax.set_xlabel('PQ值', fontsize=12)
-            ax.set_ylabel('密度', fontsize=12)
-            ax.set_title('原始/处理后PQ直方图对比', fontsize=14, fontweight='bold')
+            ax.set_xlabel('PQ Value', fontsize=12)
+            ax.set_ylabel('Density', fontsize=12)
+            ax.set_title('PQ Histogram Comparison (Input vs Output)', fontsize=14, fontweight='bold')
             ax.grid(True, alpha=0.3)
             ax.legend(loc='upper right')
             ax.set_xlim(0, 1)
@@ -179,7 +179,7 @@ class UIIntegration:
             
         except Exception as e:
             self.logger.error(f"更新PQ直方图时发生错误: {e}")
-            return self._create_error_histogram(f"直方图生成失败: {str(e)}")
+            return self._create_error_histogram(f"Histogram generation failed: {str(e)}")
     
     def _create_error_histogram(self, error_msg: str) -> plt.Figure:
         """
@@ -196,9 +196,9 @@ class UIIntegration:
             ax.text(0.5, 0.5, error_msg, 
                    horizontalalignment='center', verticalalignment='center',
                    transform=ax.transAxes, fontsize=12, color='red')
-            ax.set_xlabel('PQ值', fontsize=12)
-            ax.set_ylabel('密度', fontsize=12)
-            ax.set_title('PQ直方图对比 - 错误', fontsize=14)
+            ax.set_xlabel('PQ Value', fontsize=12)
+            ax.set_ylabel('Density', fontsize=12)
+            ax.set_title('PQ Histogram Comparison - Error', fontsize=14)
             ax.set_xlim(0, 1)
             ax.set_ylim(0, 1)
             ax.grid(True, alpha=0.3)
