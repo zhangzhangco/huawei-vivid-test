@@ -9,6 +9,61 @@ import numpy as np
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+from matplotlib import rcParams, font_manager
+
+def _configure_matplotlib_fonts():
+    """确保Matplotlib具备可用的中文字体，避免渲染乱码"""
+    import os
+    import glob
+
+    preferred_keywords = [
+        "pingfang", "heiti", "song", "kaiti", "fangsong",
+        "yahei", "simsun", "simhei", "sourcehansans",
+        "noto sans cjk", "wqy", "wenquanyi", "sarasa"
+    ]
+
+    font_paths = set(font_manager.findSystemFonts())
+    search_roots = [
+        "/System/Library/Fonts",
+        "/Library/Fonts",
+        os.path.expanduser("~/Library/Fonts"),
+        "/usr/share/fonts",
+        "/usr/local/share/fonts",
+        os.path.expanduser("~/.local/share/fonts"),
+        "C:/Windows/Fonts",
+    ]
+    for root in search_roots:
+        if os.path.isdir(root):
+            for pattern in ("*.ttf", "*.ttc", "*.otf"):
+                font_paths.update(glob.glob(os.path.join(root, pattern)))
+
+    selected_font_name = None
+    for path in font_paths:
+        name = os.path.basename(path).lower()
+        if any(keyword in name for keyword in preferred_keywords):
+            try:
+                font_manager.fontManager.addfont(path)
+                font_name = font_manager.FontProperties(fname=path).get_name()
+                if font_name:
+                    selected_font_name = font_name
+                    break
+            except Exception:
+                continue
+
+    fallback_families = [
+        selected_font_name,
+        'PingFang SC', 'Microsoft YaHei', 'Source Han Sans SC',
+        'Noto Sans CJK SC', 'WenQuanYi Micro Hei', 'SimHei',
+        'Arial Unicode MS', 'DejaVu Sans'
+    ]
+    fallback_families = [name for name in fallback_families if name]
+
+    rcParams['font.family'] = 'sans-serif'
+    rcParams['font.sans-serif'] = fallback_families
+    rcParams['axes.unicode_minus'] = False
+
+_configure_matplotlib_fonts()
+
 import io
 import base64
 from typing import Dict, List, Tuple, Optional, Any
@@ -31,7 +86,7 @@ from core import (
 class UIState:
     """UI状态管理"""
     current_mode: str = "艺术模式"
-    current_image: Optional[np.ndarray] = None
+    current_image_path: Optional[str] = None  # 存储文件路径而非图像数组
     current_image_stats: Optional[ImageStats] = None
     last_curve_update: float = 0.0
     processing_time: float = 0.0
@@ -67,20 +122,19 @@ class GradioInterface:
         # UI状态
         self.ui_state = UIState()
         
-        # 从状态管理器获取初始参数
-        session_state = self.state_manager.get_session_state()
+        # 设置默认参数
         self.default_params = {
-            'p': session_state.p,
-            'a': session_state.a,
-            'dt_low': session_state.dt_low,
-            'dt_high': session_state.dt_high,
-            'window_size': session_state.window_size,
-            'lambda_smooth': session_state.lambda_smooth,
-            'th1': session_state.th1,
-            'th2': session_state.th2,
-            'th3': session_state.th3,
-            'th_strength': session_state.th_strength,
-            'luminance_channel': session_state.luminance_channel
+            'p': 2.0,
+            'a': 0.5,
+            'dt_low': 0.05,
+            'dt_high': 0.15,
+            'window_size': 10,
+            'lambda_smooth': 0.35,
+            'th1': 0.25,
+            'th2': 0.5,
+            'th3': 0.75,
+            'th_strength': 0.3,
+            'luminance_channel': 'MaxRGB'
         }
         
     def create_interface(self) -> gr.Blocks:
@@ -201,12 +255,11 @@ class GradioInterface:
             )
             
             self.lambda_slider = gr.Slider(
-                minimum=0.1,
-                maximum=0.8,
+                minimum=0.2,
+                maximum=0.5,
                 value=self.default_params['lambda_smooth'],
-                step=0.1,
-                label="平滑强度 λ",
-                info="时域平滑的强度系数"
+                step=0.05,
+                label="平滑强度 λ"
             )
             
         # 样条曲线参数
@@ -299,17 +352,30 @@ class GradioInterface:
         # 时域平滑统计
         with gr.Group():
             gr.Markdown("## 时域平滑统计")
-            
+
             with gr.Row():
                 self.frame_count = gr.Number(
                     label="历史帧数",
                     precision=0,
                     interactive=False
                 )
-                
+
                 self.variance_reduction = gr.Number(
                     label="方差降低 (%)",
                     precision=1,
+                    interactive=False
+                )
+
+            with gr.Row():
+                self.delta_p_raw = gr.Number(
+                    label="Δp_raw",
+                    precision=4,
+                    interactive=False
+                )
+
+                self.delta_p_filtered = gr.Number(
+                    label="Δp_filtered",
+                    precision=4,
                     interactive=False
                 )
                 
@@ -432,15 +498,27 @@ class GradioInterface:
                     max_lines=4
                 )
                 
-            # 处理结果
+            # 原图显示
             with gr.Column():
-                self.image_output = gr.Image(
-                    label="色调映射结果",
-                    height=300
+                self.original_image_display = gr.Image(
+                    label="原始图像"
                 )
-                
+
+        # 处理结果
+        with gr.Column():
+            self.image_output = gr.Image(
+                label="色调映射结果"
+            )
+
+            with gr.Row():
+                self.process_btn = gr.Button("处理图像", variant="primary")
+
                 with gr.Row():
-                    self.process_btn = gr.Button("处理图像", variant="primary")
+                    self.export_format = gr.Dropdown(
+                        choices=["json", "lut", "csv", "diagnostic"],
+                        value="json",
+                        label="导出格式"
+                    )
                     self.export_btn = gr.Button("导出数据", variant="secondary")
                     
         # 图像统计对比
@@ -448,11 +526,60 @@ class GradioInterface:
             with gr.Column():
                 gr.Markdown("### 原始图像统计")
                 self.orig_stats = gr.JSON(label="统计信息")
-                
+
             with gr.Column():
                 gr.Markdown("### 处理后统计")
                 self.processed_stats = gr.JSON(label="统计信息")
+
+        # PQ直方图对比视图
+        with gr.Row():
+            with gr.Column():
+                gr.Markdown("### PQ直方图对比")
+                self.histogram_plot = gr.Plot(
+                    label="原始/处理后PQ直方图对比"
+                )
                 
+    def _compute_core_tone_mapping(self, p: float, a: float, channel: str = "MaxRGB",
+                                   use_real_image: bool = True) -> Tuple[np.ndarray, np.ndarray, bool]:
+        """
+        核心色调映射计算函数，统一曲线和指标计算流程
+
+        Args:
+            p: Phoenix曲线参数p
+            a: Phoenix曲线参数a
+            channel: 亮度通道类型
+            use_real_image: 是否使用真实图像数据
+
+        Returns:
+            (L_in, L_out, success): 输入亮度、输出亮度、是否成功
+        """
+        try:
+            if use_real_image and self.ui_state.current_image_path is not None:
+                # 使用真实图像
+                image, processing_path = self.load_hdr_image(self.ui_state.current_image_path)
+                if image is not None:
+                    # 检测输入格式并转换到PQ域（符合需求12.4）
+                    input_format = self.image_processor.detect_input_format(self.ui_state.current_image_path)
+                    pq_image = self.image_processor.convert_to_pq_domain(image, input_format)
+
+                    # 从PQ域图像提取亮度
+                    from src.core.image_processor import extract_luminance
+                    L_in = extract_luminance(pq_image, channel)
+
+                    # 应用色调映射
+                    tone_curve_func = lambda x: self.phoenix_calc.compute_phoenix_curve(x, p, a)
+                    L_out = tone_curve_func(L_in)
+                    return L_in, L_out, True
+
+            # 使用合成数据（回退方案）
+            L_in = np.linspace(0, 1, 1000)
+            L_out = self.phoenix_calc.compute_phoenix_curve(L_in, p, a)
+            return L_in, L_out, True
+
+        except Exception as e:
+            # 失败时返回空数组
+            return np.array([]), np.array([]), False
+
     def _setup_event_handlers(self):
         """设置事件处理器"""
         
@@ -463,7 +590,7 @@ class GradioInterface:
         ]
         
         for param_input in param_inputs:
-            param_input.release(
+            param_input.change(
                 fn=self.update_curve_visualization,
                 inputs=param_inputs + [self.mode_radio],
                 outputs=[
@@ -475,7 +602,7 @@ class GradioInterface:
         # 质量指标参数变化
         quality_inputs = [self.dt_low_slider, self.dt_high_slider, self.channel_radio]
         for quality_input in quality_inputs:
-            quality_input.release(
+            quality_input.change(
                 fn=self.update_quality_metrics,
                 inputs=param_inputs + quality_inputs + [self.mode_radio],
                 outputs=[
@@ -510,7 +637,7 @@ class GradioInterface:
         self.image_input.change(
             fn=self.handle_image_upload,
             inputs=[self.image_input, self.channel_radio],
-            outputs=[self.image_info, self.orig_stats]
+            outputs=[self.image_info, self.orig_stats, self.original_image_display]
         )
         
         self.process_btn.click(
@@ -525,14 +652,14 @@ class GradioInterface:
         
         self.export_btn.click(
             fn=self.export_data,
-            inputs=param_inputs + quality_inputs + [self.window_slider, self.lambda_slider],
+            inputs=param_inputs + quality_inputs + [self.window_slider, self.lambda_slider, self.export_format],
             outputs=[gr.File()]
         )
         
         # 状态管理按钮事件
         self.save_state_btn.click(
             fn=self.save_state,
-            outputs=[gr.Textbox(label="保存结果", visible=False)]
+            outputs=[]
         )
         
         self.load_state_btn.click(
@@ -616,11 +743,14 @@ class GradioInterface:
                 self.ui_error_handler.create_system_error("plot_creation_failed", reason=str(plot_error))
                 fig = self.ui_error_handler.create_error_plot(f"图表创建失败: {str(plot_error)}", "curve")
                 
-            # 计算质量指标（使用合成数据）
+            # 计算质量指标（基于当前曲线）
             try:
-                distortion = abs(final_curve.mean() - L.mean())
-                contrast = np.mean(np.abs(np.diff(final_curve)))
-                
+                L_in_curve = np.asarray(L, dtype=np.float64)
+                L_out_curve = np.asarray(final_curve, dtype=np.float64)
+
+                distortion = self.quality_calc.compute_perceptual_distortion(L_in_curve, L_out_curve)
+                contrast = self.quality_calc.compute_local_contrast(L_out_curve)
+
                 # 模式推荐
                 recommendation = self.quality_calc.recommend_mode_with_hysteresis(distortion)
                 
@@ -650,18 +780,9 @@ class GradioInterface:
             return fig, distortion, contrast, recommendation, processing_time
             
         except Exception as e:
-            # 静默处理错误，避免控制台输出
             processing_time = (time.time() - start_time) * 1000
-            
-            # 尝试创建简单的错误图表
-            try:
-                error_plot = self._create_fallback_error_plot("参数计算中...")
-            except:
-                # 创建最基础的图表
-                error_plot = self._create_minimal_plot()
-                
-            # 返回默认值，不显示错误信息
-            return error_plot, 0.0, 0.0, "计算中...", processing_time
+            self.ui_error_handler.create_calculation_error("曲线更新", str(e))
+            return self.ui_error_handler.create_error_plot(str(e), "curve"), 0.0, 0.0, "计算失败", processing_time
             
     def _compute_simple_spline(self, L: np.ndarray, nodes: List[float]) -> np.ndarray:
         """计算简化的样条曲线"""
@@ -865,21 +986,11 @@ class GradioInterface:
             self.quality_calc.dt_high = dt_high
             self.quality_calc.luminance_channel = channel
             
-            # 使用当前图像或合成数据计算指标
-            if self.ui_state.current_image is not None:
-                # 使用真实图像
-                L_in = self.image_processor.extract_luminance(
-                    self.ui_state.current_image, channel
-                )
-                
-                # 应用色调映射
-                tone_curve_func = lambda x: self.phoenix_calc.compute_phoenix_curve(x, p, a)
-                L_out = tone_curve_func(L_in)
-                
-            else:
-                # 使用合成数据
-                L_in = np.linspace(0, 1, 1000)
-                L_out = self.phoenix_calc.compute_phoenix_curve(L_in, p, a)
+            # 使用统一的核心计算函数
+            L_in, L_out, success = self._compute_core_tone_mapping(p, a, channel, use_real_image=True)
+
+            if not success:
+                return 0.0, 0.0, "计算失败"
                 
             # 计算指标
             distortion = self.quality_calc.compute_perceptual_distortion(L_in, L_out)
@@ -959,13 +1070,13 @@ class GradioInterface:
         except Exception as e:
             return 2.0, 0.5, f"参数估算失败: {str(e)}"
             
-    def handle_image_upload(self, image_file: str, channel: str) -> Tuple[str, Dict]:
+    def handle_image_upload(self, image_file: str, channel: str):
         """处理图像上传"""
 
         if image_file is None:
-            self.ui_state.current_image = None
+            self.ui_state.current_image_path = None
             self.ui_state.current_image_stats = None
-            return "未上传图像", {}
+            return "未上传图像", {}, None
 
         # 检测输入格式
         input_format = self.image_processor.detect_input_format(image_file)
@@ -973,13 +1084,13 @@ class GradioInterface:
         # 加载HDR图像
         image, processing_path = self.load_hdr_image(image_file)
         if image is None:
-            self.ui_state.current_image = None
+            self.ui_state.current_image_path = None
             self.ui_state.current_image_stats = None
-            return processing_path, {}  # 此时 processing_path 包含错误信息
+            return processing_path, {}, None  # 此时 processing_path 包含错误信息
 
         try:
-            # 存储图像
-            self.ui_state.current_image = image.copy()
+            # 存储文件路径
+            self.ui_state.current_image_path = image_file
 
             # 转换到PQ域，使用检测到的格式
             pq_image = self.image_processor.convert_to_pq_domain(image, input_format)
@@ -1013,13 +1124,16 @@ class GradioInterface:
                 "方差": f"{stats.var_pq:.6f}",
                 "动态范围": f"{stats.max_pq - stats.min_pq:.6f}"
             }
-            
-            return info_text, stats_dict
+
+            # 转换图像用于显示（PQ域转sRGB显示域）
+            display_image = self.image_processor.convert_for_display(pq_image)
+
+            return info_text, stats_dict, display_image
             
         except Exception as e:
             import traceback
             traceback.print_exc()
-            return f"图像处理失败: {str(e)}", {}
+            return f"图像处理失败: {str(e)}", {}, None
             
     def load_hdr_image(self, file_path: str) -> Tuple[np.ndarray, str]:
         """加载HDR图像文件"""
@@ -1086,74 +1200,21 @@ class GradioInterface:
             
         except Exception as e:
             return None, f"文件加载失败: {str(e)}"
-    
-    def process_image(self, p: float, a: float, enable_spline: bool,
-                     th1: float, th2: float, th3: float, th_strength: float,
-                     image_file: str, channel: str) -> Tuple[np.ndarray, Dict, float, float, str]:
-        """处理图像"""
 
-        if image_file is None:
-            return None, {}, 0.0, 0.0, "未上传图像"
-
-        # 检测输入格式
-        input_format = self.image_processor.detect_input_format(image_file)
-
-        # 加载HDR图像
-        image, processing_path = self.load_hdr_image(image_file)
-        if image is None:
-            return None, {}, 0.0, 0.0, processing_path
-
-        try:
-            # 转换到PQ域，使用检测到的格式
-            pq_image = self.image_processor.convert_to_pq_domain(image, input_format)
-            
-            # 创建色调映射函数
-            def tone_curve_func(L):
-                return self.phoenix_calc.compute_phoenix_curve(L, p, a)
-                
-            # 应用色调映射
-            mapped_image = self.image_processor.apply_tone_mapping(
-                pq_image, tone_curve_func, channel
-            )
-            
-            # 转换回显示格式
-            display_image = self.pq_converter.pq_to_linear(mapped_image)
-            display_image = np.clip(display_image / 10000.0, 0, 1)  # 归一化到[0,1]
-            
-            # 计算处理后统计
-            processed_stats = self.image_processor.get_image_stats(mapped_image, channel)
-            stats_dict = {
-                "最小PQ值": f"{processed_stats.min_pq:.6f}",
-                "最大PQ值": f"{processed_stats.max_pq:.6f}",
-                "平均PQ值": f"{processed_stats.avg_pq:.6f}",
-                "方差": f"{processed_stats.var_pq:.6f}",
-                "动态范围": f"{processed_stats.max_pq - processed_stats.min_pq:.6f}"
-            }
-            
-            # 计算质量指标
-            from src.core.image_processor import extract_luminance
-            L_in = extract_luminance(pq_image, channel)
-            L_out = extract_luminance(mapped_image, channel)
-            
-            distortion = self.quality_calc.compute_perceptual_distortion(L_in, L_out)
-            contrast = self.quality_calc.compute_local_contrast(L_out)
-            recommendation = self.quality_calc.recommend_mode_with_hysteresis(distortion)
-            
-            return display_image, stats_dict, distortion, contrast, recommendation
-            
-        def export_data(self, p: float, a: float, enable_spline: bool,
+    def export_data(self, p: float, a: float, enable_spline: bool,
                    th1: float, th2: float, th3: float, th_strength: float,
                    dt_low: float, dt_high: float, channel: str,
-                   window_size: int, lambda_smooth: float) -> str:
-        """导出数据"""
-        
+                   window_size: int, lambda_smooth: float,
+                   export_format: str = "json"):
+        """导出数据 - 支持多种格式"""
+
         try:
             # 生成曲线数据
             L = np.linspace(0, 1, 1024)
             L_out = self.phoenix_calc.compute_phoenix_curve(L, p, a)
-            
-            # 创建导出数据
-            export_data = {
+
+            # 基本导出数据
+            base_data = {
                 "parameters": {
                     "p": p,
                     "a": a,
@@ -1166,27 +1227,99 @@ class GradioInterface:
                     "window_size": window_size,
                     "lambda_smooth": lambda_smooth
                 },
-                "curve_data": {
-                    "input_luminance": L.tolist(),
-                    "output_luminance": L_out.tolist()
-                },
                 "metadata": {
                     "export_time": time.strftime("%Y-%m-%d %H:%M:%S"),
                     "version": "1.0",
                     "tool": "HDR色调映射专利可视化工具"
                 }
             }
-            
-            # 保存到文件
-            filename = f"hdr_tone_mapping_export_{int(time.time())}.json"
-            with open(filename, 'w', encoding='utf-8') as f:
-                json.dump(export_data, f, indent=2, ensure_ascii=False)
-                
-            return filename
-            
+
+            # 使用ExportManager进行高级导出
+            from core import get_export_manager
+            export_manager = get_export_manager()
+
+            timestamp = int(time.time())
+            base_filename = f"hdr_tone_mapping_{timestamp}"
+
+            if export_format == "lut":
+                # 导出LUT文件 (.cube)
+                try:
+                    lut_filename = export_manager.export_lut(
+                        p=p, a=a,
+                        filename=f"{base_filename}.cube"
+                    )
+                    return lut_filename
+                except Exception as e:
+                    return f"LUT导出失败: {str(e)}"
+
+            elif export_format == "csv":
+                # 导出CSV文件
+                try:
+                    csv_data = {
+                        "input_luminance": L.tolist(),
+                        "output_luminance": L_out.tolist(),
+                        **base_data
+                    }
+                    csv_filename = export_manager.export_csv(
+                        data=csv_data,
+                        filename=f"{base_filename}.csv"
+                    )
+                    return csv_filename
+                except Exception as e:
+                    return f"CSV导出失败: {str(e)}"
+
+            elif export_format == "diagnostic":
+                # 导出诊断包
+                try:
+                    # 包含当前图像信息（如果有）
+                    image_data = None
+                    if self.ui_state.current_image_path is not None:
+                        image_data = {
+                            "image_path": self.ui_state.current_image_path,
+                            "image_stats": self.ui_state.current_image_stats.__dict__ if self.ui_state.current_image_stats else None
+                        }
+
+                    diagnostic_data = {
+                        **base_data,
+                        "curve_data": {
+                            "input_luminance": L.tolist(),
+                            "output_luminance": L_out.tolist()
+                        },
+                        "image_data": image_data,
+                        "quality_metrics": {
+                            "distortion": 0.0,  # 可以从当前UI状态获取
+                            "contrast": 0.0,   # 可以从当前UI状态获取
+                            "recommendation": ""
+                        }
+                    }
+
+                    diagnostic_filename = export_manager.export_diagnostic_package(
+                        data=diagnostic_data,
+                        filename=f"{base_filename}_diagnostic.zip"
+                    )
+                    return diagnostic_filename
+                except Exception as e:
+                    return f"诊断包导出失败: {str(e)}"
+
+            else:
+                # 默认JSON导出
+                export_data = {
+                    **base_data,
+                    "curve_data": {
+                        "input_luminance": L.tolist(),
+                        "output_luminance": L_out.tolist()
+                    }
+                }
+
+                filename = f"{base_filename}.json"
+                with open(filename, 'w', encoding='utf-8') as f:
+                    json.dump(export_data, f, indent=2, ensure_ascii=False)
+
+                return filename
+
         except Exception as e:
             return f"导出失败: {str(e)}"
-            
+
     def _get_custom_css(self) -> str:
         """获取自定义CSS样式"""
         
@@ -1216,6 +1349,58 @@ class GradioInterface:
         }
         """
         
+    def _create_histogram_comparison(self, L_in: np.ndarray, L_out: np.ndarray,
+                                    title: str = "PQ直方图对比") -> plt.Figure:
+        """
+        创建PQ直方图对比视图
+
+        Args:
+            L_in: 输入亮度数组 (PQ域)
+            L_out: 输出亮度数组 (PQ域)
+            title: 图表标题
+
+        Returns:
+            matplotlib Figure对象
+        """
+        try:
+            # 计算直方图
+            hist_in, bin_edges = self.quality_calc.compute_histogram(L_in, bins=256)
+            hist_out, _ = self.quality_calc.compute_histogram(L_out, bins=256)
+
+            # 创建图表
+            fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
+
+            # 原始直方图
+            ax1.bar(bin_edges[:-1], hist_in, width=bin_edges[1]-bin_edges[0],
+                   alpha=0.7, color='blue', edgecolor='black', linewidth=0.5)
+            ax1.set_title('原始图像PQ直方图')
+            ax1.set_xlabel('PQ值')
+            ax1.set_ylabel('像素数量')
+            ax1.grid(True, alpha=0.3)
+            ax1.set_xlim(0, 1)
+
+            # 处理后直方图
+            ax2.bar(bin_edges[:-1], hist_out, width=bin_edges[1]-bin_edges[0],
+                   alpha=0.7, color='red', edgecolor='black', linewidth=0.5)
+            ax2.set_title('处理后图像PQ直方图')
+            ax2.set_xlabel('PQ值')
+            ax2.set_ylabel('像素数量')
+            ax2.grid(True, alpha=0.3)
+            ax2.set_xlim(0, 1)
+
+            plt.suptitle(title)
+            plt.tight_layout()
+
+            return fig
+
+        except Exception as e:
+            # 错误处理
+            fig, ax = plt.subplots(figsize=(8, 4))
+            ax.text(0.5, 0.5, f'直方图生成失败: {str(e)}',
+                   ha='center', va='center', transform=ax.transAxes)
+            ax.set_title('直方图错误')
+            return fig
+
     def _setup_state_listeners(self):
         """设置状态管理监听器"""
         
@@ -1249,8 +1434,14 @@ class GradioInterface:
         """从UI更新时域状态"""
         # 计算图像哈希
         image_hash = ""
-        if self.ui_state.current_image is not None:
-            image_hash = str(hash(self.ui_state.current_image.tobytes()))
+        if self.ui_state.current_image_path is not None:
+            # 使用文件路径和修改时间作为哈希基础
+            import os
+            try:
+                stat_info = os.stat(self.ui_state.current_image_path)
+                image_hash = f"{self.ui_state.current_image_path}_{stat_info.st_mtime}_{stat_info.st_size}"
+            except OSError:
+                image_hash = self.ui_state.current_image_path or ""
             
         return self.state_manager.update_temporal_state(
             p=p, a=a, distortion=distortion,
