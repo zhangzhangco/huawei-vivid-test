@@ -4,25 +4,25 @@ Phoenix曲线计算器
 """
 
 import numpy as np
-from typing import Tuple, Union
+from typing import Tuple, Union, Optional, Any
 import logging
 
 
 class PhoenixCurveCalculator:
     """Phoenix曲线计算器"""
     
-    def __init__(self):
+    def __init__(self, display_samples: int = 512, validation_samples: int = 1024,
+                 sampling_optimizer: Optional[Any] = None):
         # 数值稳定性参数
         self.eps = 1e-6
-        
-        # 采样参数（基础值，会被性能优化器动态调整）
-        self.base_display_samples = 512      # UI显示采样点数基础值
-        self.base_validation_samples = 1024  # 单调性验证采样点数基础值
-        
-        # 当前采样参数（由性能优化器管理）
-        self.display_samples = self.base_display_samples
-        self.validation_samples = self.base_validation_samples
-        
+
+        # 采样参数
+        self.display_samples = display_samples
+        self.validation_samples = validation_samples
+
+        # 可选的采样优化器
+        self._sampling_optimizer = sampling_optimizer
+
         # 参数范围
         self.p_range = (0.1, 6.0)
         self.a_range = (0.0, 1.0)
@@ -52,11 +52,7 @@ class PhoenixCurveCalculator:
         L_array = np.asarray(L)
         L_clipped = np.clip(L_array, self.eps, 1.0)
 
-        # 特殊处理：当 a <= eps 时，直接返回恒值1
-        if a <= self.eps:
-            return np.ones_like(L_clipped)
-
-        # Phoenix曲线计算
+        # Phoenix曲线计算（数值稳定，无需特殊处理a=0的情况）
         L_p = np.power(L_clipped, p)
         a_p = np.power(a, p)
 
@@ -67,14 +63,17 @@ class PhoenixCurveCalculator:
         """
         端点归一化到显示设备范围
         确保端点严格匹配：L=0→L'=L_min，L=1→L'=L_max
-        
+
+        注意：此操作会线性拉伸曲线以对齐端点，会改变原始曲线形状。
+        通过线性重映射将 Phoenix 曲线的输出范围映射到显示设备的PQ范围。
+
         Args:
             L_out: Phoenix曲线输出
             L_min: 显示设备最小PQ值
             L_max: 显示设备最大PQ值
-            
+
         Returns:
-            归一化后的曲线
+            线性重映射后的曲线
         """
         if len(L_out) < 2:
             return L_out
@@ -119,13 +118,8 @@ class PhoenixCurveCalculator:
             是否单调递增
         """
         try:
-            if use_optimized_sampling:
-                try:
-                    from .performance_monitor import get_sampling_optimizer
-                    optimizer = get_sampling_optimizer()
-                    samples = optimizer.optimize_sampling_density("validation")
-                except ImportError:
-                    samples = self.validation_samples
+            if use_optimized_sampling and self._sampling_optimizer is not None:
+                samples = self._sampling_optimizer.optimize_sampling_density("validation")
             else:
                 samples = self.validation_samples
                 
@@ -148,15 +142,8 @@ class PhoenixCurveCalculator:
         Returns:
             (输入亮度数组, 输出亮度数组)
         """
-        if use_optimized_sampling:
-            try:
-                # 尝试使用性能优化器获取最优采样点数
-                from .performance_monitor import get_sampling_optimizer
-                optimizer = get_sampling_optimizer()
-                samples = optimizer.optimize_sampling_density("display")
-            except ImportError:
-                # 如果性能监控器不可用，使用默认值
-                samples = self.display_samples
+        if use_optimized_sampling and self._sampling_optimizer is not None:
+            samples = self._sampling_optimizer.optimize_sampling_density("display")
         else:
             samples = self.display_samples
             
@@ -176,15 +163,8 @@ class PhoenixCurveCalculator:
         Returns:
             (输入亮度数组, 输出亮度数组)
         """
-        if use_optimized_sampling:
-            try:
-                # 尝试使用性能优化器获取最优采样点数
-                from .performance_monitor import get_sampling_optimizer
-                optimizer = get_sampling_optimizer()
-                samples = optimizer.optimize_sampling_density("validation")
-            except ImportError:
-                # 如果性能监控器不可用，使用默认值
-                samples = self.validation_samples
+        if use_optimized_sampling and self._sampling_optimizer is not None:
+            samples = self._sampling_optimizer.optimize_sampling_density("validation")
         else:
             samples = self.validation_samples
             

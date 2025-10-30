@@ -463,7 +463,7 @@ class GradioInterface:
         ]
         
         for param_input in param_inputs:
-            param_input.change(
+            param_input.release(
                 fn=self.update_curve_visualization,
                 inputs=param_inputs + [self.mode_radio],
                 outputs=[
@@ -475,7 +475,7 @@ class GradioInterface:
         # 质量指标参数变化
         quality_inputs = [self.dt_low_slider, self.dt_high_slider, self.channel_radio]
         for quality_input in quality_inputs:
-            quality_input.change(
+            quality_input.release(
                 fn=self.update_quality_metrics,
                 inputs=param_inputs + quality_inputs + [self.mode_radio],
                 outputs=[
@@ -1141,10 +1141,7 @@ class GradioInterface:
             
             return display_image, stats_dict, distortion, contrast, recommendation
             
-        except Exception as e:
-            return None, {}, 0.0, 0.0, f"图像处理失败: {str(e)}"
-            
-    def export_data(self, p: float, a: float, enable_spline: bool,
+        def export_data(self, p: float, a: float, enable_spline: bool,
                    th1: float, th2: float, th3: float, th_strength: float,
                    dt_low: float, dt_high: float, channel: str,
                    window_size: int, lambda_smooth: float) -> str:
@@ -1500,6 +1497,7 @@ def main():
     
     try:
         app = create_app()
+        app.queue()  # 启用队列以支持并发处理
         app.launch(
             server_name="0.0.0.0",
             server_port=7860,

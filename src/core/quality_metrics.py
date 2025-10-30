@@ -44,63 +44,58 @@ class QualityMetricsCalculator:
     def extract_luminance(self, image: np.ndarray) -> np.ndarray:
         """
         提取亮度通道 (需求 12.1)
-        
+        使用共享的 extract_luminance 函数确保一致性
+
         Args:
-            image: 输入图像 (H, W) 或 (H, W, C)
-            
+            image: 输入图像 (H, W), (H, W, 1), (H, W, 3) 或 (H, W, 4)
+
         Returns:
-            亮度通道数组
+            亮度通道数组 (float32)
         """
-        if image.ndim == 2:
-            # 灰度图像
-            return image.astype(np.float64)
-        elif image.ndim == 3:
-            if self.luminance_channel == "MaxRGB":
-                # MaxRGB通道
-                return np.max(image, axis=-1).astype(np.float64)
-            elif self.luminance_channel == "Y":
-                # Y通道 (BT.2100权重)
-                if image.shape[-1] >= 3:
-                    return np.dot(image[..., :3], self.y_weights).astype(np.float64)
-                else:
-                    # 如果通道数不足，使用MaxRGB
-                    return np.max(image, axis=-1).astype(np.float64)
-        else:
-            raise ValueError(f"不支持的图像维度: {image.shape}")
+        from .image_processor import extract_luminance
+        return extract_luminance(image, self.luminance_channel).astype(np.float32)
             
     def compute_perceptual_distortion(self, L_in: np.ndarray, L_out: np.ndarray) -> float:
         """
-        计算感知失真D' (需求 3.1)
+        计算平均亮度差 (需求 3.1)
         D' = |mean(L_out) - mean(L_in)|
-        
+
+        注意：此函数实际计算的是平均亮度差，并非复杂的感知失真模型。
+        这是一个简单指标，用于快速评估色调映射前后的整体亮度变化。
+        后续可考虑引入更真实的感知模型（如SSIM、VMAF等）进行扩展。
+
         Args:
             L_in: 输入亮度数组 (PQ域)
             L_out: 输出亮度数组 (PQ域)
-            
+
         Returns:
-            感知失真值
+            平均亮度差值
         """
-        L_in_array = np.asarray(L_in, dtype=np.float64)
-        L_out_array = np.asarray(L_out, dtype=np.float64)
-        
+        L_in_array = np.asarray(L_in, dtype=np.float32)
+        L_out_array = np.asarray(L_out, dtype=np.float32)
+
         mean_in = np.mean(L_in_array)
         mean_out = np.mean(L_out_array)
-        
+
         return float(abs(mean_out - mean_in))
         
     def compute_local_contrast(self, L: np.ndarray) -> float:
         """
         计算局部对比度 (需求 3.2)
         局部对比度 = mean(|∇L|) (相邻像素亮度梯度的平均值)
-        
+
+        注意：使用 np.diff 的轻量近似实现，适合实时UI场景。
+        相比 Sobel/Scharr 等复杂梯度算子，计算量更低但精度有限。
+        未来可作为可选模式扩展更精确的梯度算法。
+
         Args:
             L: 亮度数组 (PQ域)
-            
+
         Returns:
             局部对比度值
         """
-        L_array = np.asarray(L, dtype=np.float64)
-        
+        L_array = np.asarray(L, dtype=np.float32)
+
         if L_array.ndim == 1:
             # 1D数组：计算相邻差分
             if len(L_array) < 2:
@@ -111,11 +106,11 @@ class QualityMetricsCalculator:
             # 2D图像：计算梯度幅值
             grad_x = np.abs(np.diff(L_array, axis=1))
             grad_y = np.abs(np.diff(L_array, axis=0))
-            
+
             # 计算平均梯度幅值
             contrast_x = np.mean(grad_x) if grad_x.size > 0 else 0.0
             contrast_y = np.mean(grad_y) if grad_y.size > 0 else 0.0
-            
+
             return float((contrast_x + contrast_y) / 2.0)
         else:
             raise ValueError(f"不支持的数组维度: {L_array.shape}")
