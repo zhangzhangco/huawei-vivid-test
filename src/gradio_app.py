@@ -157,7 +157,7 @@ class GradioInterface:
         }
         
     def create_interface(self) -> gr.Blocks:
-        """创建Gradio界面"""
+        """创建Gradio界面 - 三栏四区优化布局"""
         
         with gr.Blocks(
             title="HDR色调映射专利可视化工具",
@@ -165,26 +165,23 @@ class GradioInterface:
             css=self._get_custom_css()
         ) as interface:
             
-            # 标题和说明
-            gr.Markdown("""
-            # HDR色调映射专利可视化工具
+            # 标题
+            gr.Markdown("# HDR色调映射专利可视化工具")
             
-            基于Phoenix曲线算法的HDR色调映射可视化系统，支持实时参数调节、质量指标分析和图像处理。
-            """)
-            
+            # 主要三栏布局
             with gr.Row():
-                # 左侧：参数控制面板
-                with gr.Column(scale=1):
-                    self._create_parameter_panel()
+                # 左栏：参数控制区 (25%)
+                with gr.Column(scale=25):
+                    self._create_left_parameter_panel()
                     
-                # 右侧：可视化和结果显示
-                with gr.Column(scale=2):
-                    self._create_visualization_panel()
+                # 中栏：曲线与指标区 (45%)
+                with gr.Column(scale=45):
+                    self._create_middle_visualization_panel()
                     
-            # 底部：图像处理界面
-            with gr.Row():
-                self._create_image_interface()
-                
+                # 右栏：图像与统计区 (30%)
+                with gr.Column(scale=30):
+                    self._create_right_image_panel()
+                    
             # 设置事件处理
             self._setup_event_handlers()
             
@@ -196,389 +193,256 @@ class GradioInterface:
             
         return interface
         
-    def _create_parameter_panel(self):
-        """创建参数控制面板"""
+    def _create_left_parameter_panel(self):
+        """左栏：参数控制区（主操作）"""
         
         gr.Markdown("## 参数控制")
         
-        # 工作模式选择
-        self.mode_radio = gr.Radio(
-            choices=["自动模式", "艺术模式"],
-            value="艺术模式",
-            label="工作模式",
-            info="自动模式：系统自动计算最优参数；艺术模式：手动调节参数"
-        )
-        
-        # Phoenix曲线参数
+        # (1) 工作模式
         with gr.Group():
-            gr.Markdown("### Phoenix曲线参数")
-            
-            self.p_slider = gr.Slider(
-                minimum=0.1,
-                maximum=6.0,
-                value=self.default_params['p'],
-                step=0.1,
-                label="亮度控制因子 p",
-                info="控制曲线的整体形状，值越大对比度越强"
+            self.mode_radio = gr.Radio(
+                choices=["自动模式", "艺术模式"],
+                value="艺术模式",
+                label="工作模式"
             )
             
-            self.a_slider = gr.Slider(
-                minimum=0.0,
-                maximum=1.0,
-                value=self.default_params['a'],
-                step=0.01,
-                label="缩放因子 a",
-                info="控制曲线的缩放程度，影响亮度映射范围"
-            )
-            
-        # 质量指标参数
-        with gr.Group():
-            gr.Markdown("### 质量指标参数")
-            
-            self.dt_low_slider = gr.Slider(
-                minimum=0.01,
-                maximum=0.15,
-                value=self.default_params['dt_low'],
-                step=0.01,
-                label="失真下阈值 D_T_low",
-                info="模式推荐的下阈值"
-            )
-            
-            self.dt_high_slider = gr.Slider(
-                minimum=0.05,
-                maximum=0.20,
-                value=self.default_params['dt_high'],
-                step=0.01,
-                label="失真上阈值 D_T_high",
-                info="模式推荐的上阈值"
-            )
-            
-            self.channel_radio = gr.Radio(
-                choices=["MaxRGB", "Y"],
-                value=self.default_params['luminance_channel'],
-                label="亮度通道",
-                info="选择用于计算的亮度通道"
-            )
-            
-        # 时域平滑参数
-        with gr.Group():
-            gr.Markdown("### 时域平滑参数")
-            
-            self.window_slider = gr.Slider(
-                minimum=5,
-                maximum=15,
-                value=self.default_params['window_size'],
-                step=1,
-                label="时域窗口大小 M",
-                info="时域平滑的窗口长度（帧数）"
-            )
-            
-            self.lambda_slider = gr.Slider(
-                minimum=0.2,
-                maximum=0.5,
-                value=self.default_params['lambda_smooth'],
-                step=0.05,
-                label="平滑强度 λ"
-            )
-            
-        # 样条曲线参数
-        with gr.Group():
-            gr.Markdown("### 样条曲线参数（可选）")
-            
-            self.enable_spline = gr.Checkbox(
-                value=False,
-                label="启用样条曲线",
-                info="启用多段样条曲线进行局部优化"
-            )
-            
-            with gr.Row():
-                self.th1_slider = gr.Slider(
-                    minimum=0.1,
-                    maximum=0.4,
-                    value=self.default_params['th1'],
-                    step=0.01,
-                    label="节点1 (TH1)"
-                )
-                
-                self.th2_slider = gr.Slider(
-                    minimum=0.4,
-                    maximum=0.6,
-                    value=self.default_params['th2'],
-                    step=0.01,
-                    label="节点2 (TH2)"
-                )
-                
-                self.th3_slider = gr.Slider(
-                    minimum=0.6,
-                    maximum=0.9,
-                    value=self.default_params['th3'],
-                    step=0.01,
-                    label="节点3 (TH3)"
-                )
-                
-            self.th_strength_slider = gr.Slider(
-                minimum=0.0,
-                maximum=1.0,
-                value=self.default_params['th_strength'],
-                step=0.1,
-                label="样条强度",
-                info="样条曲线与Phoenix曲线的混合比例"
-            )
-            
-        # 控制按钮
-        with gr.Row():
-            self.reset_btn = gr.Button("重置参数", variant="secondary")
-            self.apply_auto_btn = gr.Button("应用自动参数", variant="primary")
-            
-    def _create_visualization_panel(self):
-        """创建可视化面板"""
-        
-        # 曲线可视化
-        with gr.Group():
-            gr.Markdown("## 曲线可视化")
-            self.curve_plot = gr.Plot(label="Phoenix曲线")
-            
-        # 质量指标显示
-        with gr.Group():
-            gr.Markdown("## 质量指标")
-            
-            with gr.Row():
-                self.distortion_number = gr.Number(
-                    label="感知失真 D'",
-                    precision=6,
-                    interactive=False
-                )
-                
-                self.contrast_number = gr.Number(
-                    label="局部对比度",
-                    precision=6,
-                    interactive=False
-                )
-                
-            with gr.Row():
-                self.mode_recommendation = gr.Textbox(
-                    label="模式建议",
-                    interactive=False,
-                    max_lines=1
-                )
-                
-                self.processing_time = gr.Number(
-                    label="处理时间 (ms)",
-                    precision=1,
-                    interactive=False
-                )
-                
-        # 时域平滑统计
-        with gr.Group():
-            gr.Markdown("## 时域平滑统计")
-
-            with gr.Row():
-                self.frame_count = gr.Number(
-                    label="历史帧数",
-                    precision=0,
-                    interactive=False
-                )
-
-                self.variance_reduction = gr.Number(
-                    label="方差降低 (%)",
-                    precision=1,
-                    interactive=False
-                )
-
-            with gr.Row():
-                self.delta_p_raw = gr.Number(
-                    label="Δp_raw",
-                    precision=4,
-                    interactive=False
-                )
-
-                self.delta_p_filtered = gr.Number(
-                    label="Δp_filtered",
-                    precision=4,
-                    interactive=False
-                )
-                
-        # HDR质量评估扩展
-        with gr.Group():
-            gr.Markdown("## HDR质量评估")
-            
-            # 质量状态显示
-            self.quality_status_html = gr.HTML(
-                value="<div id='quality-status'>等待处理...</div>",
-                label="质量状态"
-            )
-            
-            # PQ直方图显示
-            self.pq_histogram_plot = gr.Plot(
-                label="PQ直方图对比",
-                value=None
-            )
-            
-            # 艺术家模式提示
-            self.artist_tips_html = gr.HTML(
-                value="<div id='artist-tips'>暂无建议</div>",
-                label="调整建议"
-            )
-        
-        # 系统状态和错误反馈
-        with gr.Group():
-            gr.Markdown("## 系统状态")
-            
-            with gr.Row():
-                self.system_status = gr.Textbox(
-                    label="系统状态",
-                    value="正常",
-                    interactive=False,
-                    max_lines=1
-                )
-                
-                self.error_count = gr.Number(
-                    label="错误计数",
-                    value=0,
-                    precision=0,
-                    interactive=False
-                )
-                
-            # 性能监控显示
-            with gr.Row():
-                self.performance_status = gr.Textbox(
-                    label="性能状态",
-                    value="监控中...",
-                    interactive=False,
-                    max_lines=2
-                )
-                
-                self.acceleration_status = gr.Textbox(
-                    label="加速状态",
-                    value="检测中...",
-                    interactive=False,
-                    max_lines=2
-                )
-                
-            with gr.Row():
-                self.auto_recovery_status = gr.Textbox(
-                    label="自动恢复",
-                    value="启用",
-                    interactive=False,
-                    max_lines=1
-                )
-                
-                self.last_error = gr.Textbox(
-                    label="最近错误",
-                    value="无",
-                    interactive=False,
-                    max_lines=2
-                )
-                
-            with gr.Row():
-                self.reset_errors_btn = gr.Button("重置错误", variant="secondary", size="sm")
-                self.system_diagnostic_btn = gr.Button("系统诊断", variant="secondary", size="sm")
-                self.performance_reset_btn = gr.Button("重置性能", variant="secondary", size="sm")
-                
-        # Auto模式信息显示
-        with gr.Group():
-            gr.Markdown("## Auto模式信息")
-            
+            # Auto模式估算信息（紧凑显示）
             with gr.Row():
                 self.estimated_p = gr.Number(
-                    label="估算 p 值",
-                    precision=3,
-                    interactive=False
+                    label="估算p", precision=2, interactive=False, scale=1
                 )
-                
                 self.estimated_a = gr.Number(
-                    label="估算 a 值",
-                    precision=3,
-                    interactive=False
+                    label="估算a", precision=2, interactive=False, scale=1
                 )
-                
             self.estimation_info = gr.Textbox(
-                label="估算信息",
-                interactive=False,
-                max_lines=3
+                label="置信度", interactive=False, max_lines=1, show_label=False
             )
-            
-        # 状态管理信息显示
+        
+        # (2) Phoenix参数块
         with gr.Group():
-            gr.Markdown("## 状态管理信息")
-            
+            gr.Markdown("### Phoenix参数")
             with gr.Row():
-                self.temporal_frames = gr.Number(
-                    label="时域帧数",
-                    precision=0,
-                    interactive=False
+                self.p_slider = gr.Slider(
+                    minimum=0.1, maximum=6.0, value=self.default_params['p'],
+                    step=0.1, label="p", scale=2
                 )
-                
-                self.state_variance_reduction = gr.Number(
-                    label="方差降低 (%)",
-                    precision=1,
-                    interactive=False
+                self.a_slider = gr.Slider(
+                    minimum=0.0, maximum=1.0, value=self.default_params['a'],
+                    step=0.01, label="a", scale=2
                 )
-                
-            with gr.Row():
-                self.save_state_btn = gr.Button("保存状态", variant="secondary")
-                self.load_state_btn = gr.Button("加载状态", variant="secondary")
             
-    def _create_image_interface(self):
-        """创建图像处理界面"""
+            # 模式切换阈值（折叠）
+            with gr.Accordion("模式切换阈值", open=False):
+                self.dt_low_slider = gr.Slider(
+                    minimum=0.01, maximum=0.15, value=self.default_params['dt_low'],
+                    step=0.01, label="D_T_low"
+                )
+                self.dt_high_slider = gr.Slider(
+                    minimum=0.05, maximum=0.20, value=self.default_params['dt_high'],
+                    step=0.01, label="D_T_high"
+                )
+                self.channel_radio = gr.Radio(
+                    choices=["MaxRGB", "Y"],
+                    value=self.default_params['luminance_channel'],
+                    label="亮度通道"
+                )
         
-        gr.Markdown("## 图像处理")
-        
-        with gr.Row():
-            # 图像上传
-            with gr.Column():
-                self.image_input = gr.File(
-                    label="上传HDR图像 (.hdr, .exr, .jpg, .png)",
-                    file_types=[".hdr", ".exr", ".jpg", ".jpeg", ".png", ".tiff", ".tif"],
-                    type="filepath"
-                )
-                
-                self.image_info = gr.Textbox(
-                    label="图像信息",
-                    interactive=False,
-                    max_lines=4
-                )
-                
-            # 原图显示
-            with gr.Column():
-                self.original_image_display = gr.Image(
-                    label="原始图像"
-                )
-
-        # 处理结果
-        with gr.Column():
-            self.image_output = gr.Image(
-                label="色调映射结果"
+        # (3) 样条曲线块
+        with gr.Accordion("样条曲线", open=False):
+            self.enable_spline = gr.Checkbox(
+                value=False, label="启用样条曲线"
             )
-
             with gr.Row():
-                self.process_btn = gr.Button("处理图像", variant="primary")
-
-                with gr.Row():
-                    self.export_format = gr.Dropdown(
-                        choices=["json", "lut", "csv", "diagnostic"],
-                        value="json",
-                        label="导出格式"
-                    )
-                    self.export_btn = gr.Button("导出数据", variant="secondary")
-                    
-        # 图像统计对比
-        with gr.Row():
-            with gr.Column():
-                gr.Markdown("### 原始图像统计")
-                self.orig_stats = gr.JSON(label="统计信息")
-
-            with gr.Column():
-                gr.Markdown("### 处理后统计")
-                self.processed_stats = gr.JSON(label="统计信息")
-
-        # PQ直方图对比视图
-        with gr.Row():
-            with gr.Column():
-                gr.Markdown("### PQ直方图对比")
-                self.histogram_plot = gr.Plot(
-                    label="原始/处理后PQ直方图对比"
+                self.th1_slider = gr.Slider(
+                    minimum=0.1, maximum=0.4, value=self.default_params['th1'],
+                    step=0.01, label="TH1", scale=1
                 )
+                self.th2_slider = gr.Slider(
+                    minimum=0.4, maximum=0.6, value=self.default_params['th2'],
+                    step=0.01, label="TH2", scale=1
+                )
+                self.th3_slider = gr.Slider(
+                    minimum=0.6, maximum=0.9, value=self.default_params['th3'],
+                    step=0.01, label="TH3", scale=1
+                )
+            self.th_strength_slider = gr.Slider(
+                minimum=0.0, maximum=1.0, value=self.default_params['th_strength'],
+                step=0.1, label="强度"
+            )
+        
+        # (4) 时域平滑块（默认收起）
+        with gr.Accordion("时域平滑", open=False):
+            self.window_slider = gr.Slider(
+                minimum=5, maximum=15, value=self.default_params['window_size'],
+                step=1, label="窗口大小 M"
+            )
+            self.lambda_slider = gr.Slider(
+                minimum=0.2, maximum=0.5, value=self.default_params['lambda_smooth'],
+                step=0.05, label="平滑强度 λ"
+            )
+        
+        # (5) 控制按钮区
+        with gr.Row():
+            self.reset_btn = gr.Button("重置", variant="secondary", size="sm")
+            self.apply_auto_btn = gr.Button("应用自动", variant="primary", size="sm")
+            self.process_btn = gr.Button("处理图像", variant="primary", size="sm")
+            
+    def _create_middle_visualization_panel(self):
+        """中栏：曲线与指标可视化（核心反馈）"""
+        
+        # (1) 曲线区 - 顶部主要区域
+        with gr.Group():
+            gr.Markdown("## 曲线与指标")
+            self.curve_plot = gr.Plot(label="Phoenix + 样条曲线")
+            
+            # 曲线下方叠加指标条（紧凑显示）
+            self.quality_indicator_html = gr.HTML(
+                value="""<div style='padding:8px; background:#f5f5f5; border-radius:4px; font-size:13px;'>
+                <span style='color:#666;'>感知失真 D′ = <b>0.000</b></span> | 
+                <span style='color:#666;'>模式建议：<b>艺术模式</b></span> | 
+                <span style='color:#666;'>亮度漂移：<b>0.0%</b></span>
+                </div>"""
+            )
+        
+        # (2) HDR质量评估 - 简化为综合语义条
+        with gr.Group():
+            gr.Markdown("### HDR质量评估")
+            self.quality_status_html = gr.HTML(
+                value="""<div style='padding:10px; background:#fff; border-left:4px solid #4CAF50; font-size:14px;'>
+                <span style='color:#666;'>🟢 高光饱和 <b>0.0%</b> | 动态范围保持 <b>1.00</b> | 直方图重叠 <b>0.0%</b></span><br>
+                <span style='color:#888; font-size:12px;'>→ 综合判定：<b>正常</b></span>
+                </div>"""
+            )
+            
+            # 可点开查看详细
+            with gr.Accordion("详细质量指标", open=False):
+                self.artist_tips_html = gr.HTML(
+                    value="<div style='color:#666;'>暂无建议</div>"
+                )
+        
+        # (3) PQ直方图对比 - 紧凑显示
+        with gr.Group():
+            gr.Markdown("### PQ直方图对比")
+            self.pq_histogram_plot = gr.Plot(label="输入/输出分布")
+        
+        # 调试区（折叠，移到最底部）
+        with gr.Accordion("调试信息", open=False):
+            with gr.Row():
+                self.distortion_number = gr.Number(
+                    label="D'", precision=6, interactive=False, scale=1
+                )
+                self.contrast_number = gr.Number(
+                    label="对比度", precision=6, interactive=False, scale=1
+                )
+                self.processing_time = gr.Number(
+                    label="时间(ms)", precision=1, interactive=False, scale=1
+                )
+            
+            self.mode_recommendation = gr.Textbox(
+                label="模式建议", interactive=False, max_lines=1
+            )
+            
+            # 时域平滑统计
+            with gr.Row():
+                self.frame_count = gr.Number(
+                    label="帧数", precision=0, interactive=False, scale=1
+                )
+                self.variance_reduction = gr.Number(
+                    label="方差降低%", precision=1, interactive=False, scale=1
+                )
+            
+            # 系统状态
+            with gr.Row():
+                self.system_status = gr.Textbox(
+                    label="系统", value="正常", interactive=False, max_lines=1, scale=1
+                )
+                self.error_count = gr.Number(
+                    label="错误", value=0, precision=0, interactive=False, scale=1
+                )
+            
+            self.performance_status = gr.Textbox(
+                label="性能", value="监控中...", interactive=False, max_lines=1
+            )
+            
+            # 保留其他调试组件但不显示
+            self.acceleration_status = gr.Textbox(
+                label="加速", value="检测中...", interactive=False, max_lines=1, visible=False
+            )
+            self.auto_recovery_status = gr.Textbox(
+                label="恢复", value="启用", interactive=False, max_lines=1, visible=False
+            )
+            self.last_error = gr.Textbox(
+                label="错误", value="无", interactive=False, max_lines=1, visible=False
+            )
+            self.delta_p_raw = gr.Number(
+                label="Δp_raw", precision=4, interactive=False, visible=False
+            )
+            self.delta_p_filtered = gr.Number(
+                label="Δp_filtered", precision=4, interactive=False, visible=False
+            )
+            self.temporal_frames = gr.Number(
+                label="时域帧", precision=0, interactive=False, visible=False
+            )
+            self.state_variance_reduction = gr.Number(
+                label="方差降低", precision=1, interactive=False, visible=False
+            )
+            
+            with gr.Row():
+                self.reset_errors_btn = gr.Button("重置错误", variant="secondary", size="sm")
+                self.system_diagnostic_btn = gr.Button("诊断", variant="secondary", size="sm")
+                self.performance_reset_btn = gr.Button("重置性能", variant="secondary", size="sm")
+                self.save_state_btn = gr.Button("保存状态", variant="secondary", size="sm", visible=False)
+                self.load_state_btn = gr.Button("加载状态", variant="secondary", size="sm", visible=False)
+            
+    def _create_right_image_panel(self):
+        """右栏：图像与统计区（视觉确认）"""
+        
+        gr.Markdown("## 图像与统计")
+        
+        # (1) 上半：图像浏览
+        with gr.Group():
+            # 图像上传
+            self.image_input = gr.File(
+                label="上传HDR图像",
+                file_types=[".hdr", ".exr", ".jpg", ".jpeg", ".png", ".tiff", ".tif"],
+                type="filepath"
+            )
+            
+            # 原图与结果并排
+            with gr.Row():
+                self.original_image_display = gr.Image(
+                    label="原图", scale=1, height=200
+                )
+                self.image_output = gr.Image(
+                    label="结果", scale=1, height=200
+                )
+        
+        # (2) 下半：统计信息（折叠面板）
+        with gr.Accordion("统计信息", open=True):
+            self.image_info = gr.Textbox(
+                label="图像信息", interactive=False, max_lines=3
+            )
+            
+            with gr.Tabs():
+                with gr.Tab("原始"):
+                    self.orig_stats = gr.JSON(label="")
+                with gr.Tab("处理后"):
+                    self.processed_stats = gr.JSON(label="")
+        
+        # (3) 导出与报告
+        with gr.Group():
+            gr.Markdown("### 导出")
+            with gr.Row():
+                self.export_format = gr.Dropdown(
+                    choices=["json", "lut", "csv", "diagnostic"],
+                    value="json",
+                    label="格式",
+                    scale=2
+                )
+                self.export_btn = gr.Button("导出", variant="secondary", size="sm", scale=1)
+        
+        # 保留但隐藏的组件（向后兼容）
+        self.histogram_plot = gr.Plot(label="直方图", visible=False)
                 
     def _compute_core_tone_mapping(self, p: float, a: float, channel: str = "MaxRGB",
                                    use_real_image: bool = True) -> Tuple[np.ndarray, np.ndarray, bool]:
@@ -636,7 +500,7 @@ class GradioInterface:
                 inputs=param_inputs + [self.mode_radio],
                 outputs=[
                     self.curve_plot, self.distortion_number, self.contrast_number,
-                    self.mode_recommendation, self.processing_time
+                    self.mode_recommendation, self.processing_time, self.quality_indicator_html
                 ]
             )
             
@@ -818,8 +682,11 @@ class GradioInterface:
             full_status = status_msg + spline_status
             if validation_errors:
                 full_status += f" | 参数修正: {len(validation_errors)}项"
+            
+            # 生成质量指标HTML（用于中栏显示）
+            quality_html = self._create_quality_indicator_html(distortion, recommendation, 0.0)
                 
-            return fig, distortion, contrast, recommendation, processing_time
+            return fig, distortion, contrast, recommendation, processing_time, quality_html
             
         except Exception as e:
             processing_time = (time.time() - start_time) * 1000
@@ -1041,18 +908,18 @@ class GradioInterface:
                 result = self.auto_estimator.estimate_parameters(self.ui_state.current_image_stats)
                 estimated_p = result.p_estimated
                 estimated_a = result.a_estimated
-                info = f"基于图像统计自动估算\n置信度: {result.confidence_score:.2f}"
+                info = f"置信度: {result.confidence_score:.2f}"
             else:
                 # 使用默认估算
                 estimated_p = 1.8
                 estimated_a = 0.4
-                info = "使用默认自动参数\n（上传图像后将基于图像统计估算）"
+                info = "默认参数（上传图像后自动估算）"
                 
             return estimated_p, estimated_a, info, estimated_p, estimated_a
             
         else:
             # 艺术模式，保持当前参数
-            return 0.0, 0.0, "手动调节模式", p, a
+            return 0.0, 0.0, "手动调节", p, a
             
     def reset_parameters(self) -> Tuple:
         """重置所有参数到默认值"""
@@ -1352,34 +1219,156 @@ class GradioInterface:
             return f"导出失败: {str(e)}"
 
     def _get_custom_css(self) -> str:
-        """获取自定义CSS样式"""
+        """获取自定义CSS样式 - 优化三栏布局"""
         
         return """
+        /* 容器优化 */
         .gradio-container {
-            max-width: 1400px !important;
+            max-width: 100% !important;
+            padding: 10px !important;
         }
         
+        /* 组件间距优化 */
         .gr-group {
             border: 1px solid #e0e0e0;
-            border-radius: 8px;
-            padding: 15px;
-            margin: 10px 0;
+            border-radius: 6px;
+            padding: 12px;
+            margin: 8px 0;
+            background: #fafafa;
         }
         
-        .gr-form {
-            background: #f8f9fa;
-        }
-        
+        /* 按钮样式 */
         .gr-button {
-            margin: 5px;
+            margin: 2px;
+            border-radius: 4px;
         }
         
+        .gr-button.gr-button-sm {
+            padding: 4px 12px;
+            font-size: 13px;
+        }
+        
+        /* 图表优化 */
         .gr-plot {
             border: 1px solid #ddd;
             border-radius: 4px;
+            background: white;
+        }
+        
+        /* 滑块优化 */
+        .gr-slider {
+            margin: 4px 0;
+        }
+        
+        /* 数字输入优化 */
+        .gr-number {
+            font-size: 13px;
+        }
+        
+        /* 折叠面板优化 */
+        .gr-accordion {
+            margin: 6px 0;
+        }
+        
+        /* 质量指标条样式 */
+        #quality-status {
+            padding: 10px;
+            border-radius: 4px;
+            font-size: 14px;
+            line-height: 1.6;
+        }
+        
+        /* 图像容器优化 */
+        .gr-image {
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        
+        /* Tab优化 */
+        .gr-tab {
+            padding: 8px 16px;
+            font-size: 13px;
+        }
+        
+        /* 紧凑布局 */
+        .gr-form {
+            gap: 8px !important;
+        }
+        
+        /* 标题优化 */
+        h2 {
+            font-size: 18px;
+            margin: 8px 0;
+            color: #333;
+        }
+        
+        h3 {
+            font-size: 15px;
+            margin: 6px 0;
+            color: #555;
         }
         """
         
+    def _create_quality_indicator_html(self, distortion: float, recommendation: str, 
+                                      luminance_drift: float = 0.0) -> str:
+        """创建质量指标HTML显示条"""
+        
+        # 根据失真程度选择颜色
+        if distortion < 0.05:
+            color = "#4CAF50"  # 绿色 - 自然
+            status_icon = "🟢"
+            status_text = "自然"
+        elif distortion < 0.10:
+            color = "#FFC107"  # 黄色 - 轻调整
+            status_icon = "🟡"
+            status_text = "轻调整"
+        else:
+            color = "#F44336"  # 红色 - 明显变化
+            status_icon = "🔴"
+            status_text = "明显变化"
+        
+        html = f"""
+        <div style='padding:10px; background:#f5f5f5; border-left:4px solid {color}; border-radius:4px; font-size:14px;'>
+            <span style='color:#333;'>{status_icon} 感知失真 D′ = <b>{distortion:.3f}</b> ({status_text})</span> | 
+            <span style='color:#555;'>模式建议：<b>{recommendation}</b></span> | 
+            <span style='color:#555;'>亮度漂移：<b>{luminance_drift:.1f}%</b></span>
+        </div>
+        """
+        return html
+    
+    def _create_enhanced_quality_status_html(self, quality_metrics: dict, status: str) -> str:
+        """创建增强的质量状态HTML（综合语义条）"""
+        
+        # 根据状态选择颜色和图标
+        status_config = {
+            "正常": {"color": "#4CAF50", "icon": "🟢"},
+            "轻微过曝": {"color": "#FFC107", "icon": "🟡"},
+            "过曝": {"color": "#F44336", "icon": "🔴"},
+            "欠曝": {"color": "#2196F3", "icon": "🔵"},
+            "未知": {"color": "#9E9E9E", "icon": "⚪"}
+        }
+        
+        config = status_config.get(status, status_config["未知"])
+        
+        # 提取关键指标
+        s_ratio = quality_metrics.get('S_ratio', 0.0) * 100
+        dr_preserve = quality_metrics.get('DR_preserve', 0.0)
+        hist_overlap = quality_metrics.get('Hist_overlap', 0.0) * 100
+        
+        html = f"""
+        <div style='padding:12px; background:#fff; border-left:4px solid {config["color"]}; border-radius:4px; font-size:14px; line-height:1.8;'>
+            <div style='color:#333; margin-bottom:6px;'>
+                {config["icon"]} <b>高光饱和</b> {s_ratio:.1f}% | 
+                <b>动态范围保持</b> {dr_preserve:.2f} | 
+                <b>直方图重叠</b> {hist_overlap:.1f}%
+            </div>
+            <div style='color:#666; font-size:13px;'>
+                → 综合判定：<b style='color:{config["color"]};'>{status}</b>
+            </div>
+        </div>
+        """
+        return html
+    
     def _create_histogram_comparison(self, L_in: np.ndarray, L_out: np.ndarray,
                                     title: str = "PQ直方图对比") -> plt.Figure:
         """
@@ -1686,10 +1675,10 @@ class GradioInterface:
             
             # 生成质量评估UI内容
             pq_histogram_plot = None
-            quality_status_html = "等待处理..."
-            artist_tips_html = "暂无建议"
+            quality_status_html = "<div style='color:#666;'>等待处理...</div>"
+            artist_tips_html = "<div style='color:#666;'>暂无建议</div>"
             
-            if quality_metrics:
+            if quality_metrics and not quality_metrics.get('error'):
                 # 获取Lin和Lout数据用于直方图
                 lin_lout_data = result.get('lin_lout_data')
                 
@@ -1701,9 +1690,9 @@ class GradioInterface:
                         # 创建PQ直方图
                         pq_histogram_plot = self.ui_integration.update_pq_histogram(lin_data, lout_data)
                 
-                # 创建质量状态显示
+                # 创建质量状态显示（优化版）
                 status = quality_metrics.get('Exposure_status', '未知')
-                quality_status_html = self.ui_integration.create_quality_status_display(quality_metrics, status)
+                quality_status_html = self._create_enhanced_quality_status_html(quality_metrics, status)
                 
                 # 创建艺术家提示
                 artist_tips_html = self.ui_integration.create_artist_tips_display(quality_metrics, status)
